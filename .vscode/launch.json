@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug NestJS (start:dev)",
+      "runtimeExecutable": "npm",
+      "runtimeVersion": "24",
+      "runtimeArgs": ["run", "start:dev"],
+      "restart": true,
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "${workspaceFolder}/node_modules/**"]
+    }
+  ]
+}
