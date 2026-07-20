@@ -8,6 +8,8 @@ import { from, Observable } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { UploadService } from '../../../core/upload/upload.service';
 
+export const pathFotoCorpoCidadao = 'cidadaos/corpo_completo';
+
 @Injectable()
 export class CidadaoCorpoUploadInterceptor implements NestInterceptor {
   constructor(private readonly uploadService: UploadService) {}
@@ -27,7 +29,7 @@ export class CidadaoCorpoUploadInterceptor implements NestInterceptor {
 
     // Cria um array de Promises/Observables para fazer o upload de cada foto
     const uploadPromises = fileArray.map((file) =>
-      this.uploadService.guardarFicheiro(file, 'cidadaos/corpo_completo'),
+      this.uploadService.guardarFicheiro(file, pathFotoCorpoCidadao),
     );
 
     // Executa todos os uploads em paralelo

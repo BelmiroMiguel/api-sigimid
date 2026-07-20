@@ -3,8 +3,13 @@ import {
   ConflictException,
   NotFoundException,
   InternalServerErrorException,
+  Logger,
+  HttpException,
 } from '@nestjs/common';
-import { EntityManagerHelper } from '@2bbelmiro/typeorm-query-buider-helper';
+import {
+  EntityManagerHelper,
+  QueryBuilderHelper,
+} from '@2bbelmiro/typeorm-query-buider-helper';
 import { ClsService } from 'nestjs-cls';
 import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
@@ -28,6 +33,8 @@ import { EntityManager } from 'typeorm';
 
 @Injectable()
 export class CidadaoService {
+  private readonly logger = new Logger(CidadaoService.name);
+
   constructor(
     private readonly entityManagerHelper: EntityManagerHelper,
     private readonly cls: ClsService,
@@ -176,103 +183,103 @@ export class CidadaoService {
       const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
       const ipRequest = this.cls.get<string>('ip');
 
-      // Lista temporária de caminhos para eliminação física segura pós-commit
       const caminhosFicheirosParaRemover: string[] = [];
 
-      return await this.entityManagerHelper.transaction(async (manager) => {
-        // Se exitir uma nova foto de perfil, pega o caminho da foto antiga para remover
-        let fotoPerfilAtual = cidadao.fotoPerfilBase;
-        if (dto.fotoPerfil) {
-          fotoPerfilAtual = dto.fotoPerfil;
-          if (fotoPerfilAntiga && fotoPerfilAntiga !== dto.fotoPerfil) {
-            caminhosFicheirosParaRemover.push(
-              path.join('uploads/cidadaos/perfil', fotoPerfilAntiga),
-            );
-          }
-        }
-
-        // Processar Galeria das Fotos de Corpo Completo (Mesclagem)
-        let novaGaleriaCompleta = cidadao.fotosCorpoCompletoBase;
-        // Se o Front-end enviou novas fotos OU indicou a lista de manutenção, gerimos a galeria
-        if (
-          dto.fotosCorpoCompleto !== undefined ||
-          dto.fotosCorpoCompletoManter !== undefined
-        ) {
-          const fotosManter = dto.fotosCorpoCompletoManter || [];
-          const fotosNovas = dto.fotosCorpoCompleto || [];
-          novaGaleriaCompleta = [...fotosManter, ...fotosNovas];
-
-          // Identificar fotos removidas pelo utilizador no Front-end para limpeza física
-          const fotosParaEliminar = fotosCorpoAntigas.filter(
-            (foto) => !fotosManter.includes(foto),
-          );
-          fotosParaEliminar.forEach((nomeFoto) => {
-            caminhosFicheirosParaRemover.push(
-              path.join('uploads/cidadaos/corpo_completo', nomeFoto),
-            );
-          });
-        }
-
-        // Atualizar campos do cidadão
-        manager.merge(Cidadao, cidadao, {
-          ...dto,
-          dataNascimento: dto.dataNascimento
-            ? new Date(dto.dataNascimento)
-            : cidadao.dataNascimento,
-          dataInscricao: dto.dataInscricao
-            ? new Date(dto.dataInscricao)
-            : cidadao.dataInscricao,
-          idUltimaModificacao: idUtilizadorLogado,
-          fotoPerfil: fotoPerfilAtual,
-          fotosCorpoCompleto: novaGaleriaCompleta,
-        });
-
-        const cidadaoSalvo = await manager.save(cidadao);
-
-        // Se fornecidas, atualizar a lista polinomial de deficiências (Limpar e Reinserir)
-        if (dto.idGrausDeficiencias) {
-          await manager.delete(CidadaoDeficiencia, { idCidadao: id });
-
-          for (const idDeficiencia of dto.idGrausDeficiencias) {
-            const deficiencia = await manager.findOneBy(Deficiencia, {
-              idDeficiencia,
-            });
-            if (!deficiencia) {
-              throw new NotFoundException(
-                `Deficiência [${idDeficiencia}] não cadastrada.`,
+      // Execução da transação no banco de dados
+      const cidadaoSalvo = await this.entityManagerHelper.transaction(
+        async (manager) => {
+          let fotoPerfilAtual = cidadao.fotoPerfilBase;
+          if (dto.fotoPerfil) {
+            fotoPerfilAtual = dto.fotoPerfil;
+            if (fotoPerfilAntiga && fotoPerfilAntiga !== dto.fotoPerfil) {
+              caminhosFicheirosParaRemover.push(
+                path.join('uploads/cidadaos/perfil', fotoPerfilAntiga),
               );
             }
-            const cd = manager.create(CidadaoDeficiencia, {
-              idOrganizacao: idOrganizacaoLogada,
-              idCidadao: cidadaoSalvo.idCidadao,
-              idDeficiencia: idDeficiencia,
+          }
+
+          let novaGaleriaCompleta = cidadao.fotosCorpoCompletoBase;
+          if (
+            dto.fotosCorpoCompleto !== undefined ||
+            dto.fotosCorpoCompletoManter !== undefined
+          ) {
+            const fotosManter = dto.fotosCorpoCompletoManter || [];
+            const fotosNovas = dto.fotosCorpoCompleto || [];
+            novaGaleriaCompleta = [...fotosManter, ...fotosNovas];
+
+            const fotosParaEliminar = fotosCorpoAntigas.filter(
+              (foto) => !fotosManter.includes(foto),
+            );
+            fotosParaEliminar.forEach((nomeFoto) => {
+              caminhosFicheirosParaRemover.push(
+                path.join('uploads/cidadaos/corpo_completo', nomeFoto),
+              );
             });
-            await manager.save(cd);
           }
-        }
 
-        // Criar Log de Auditoria
-        const log = manager.create(AuditoriaSistema, {
-          idOrganizacao: idOrganizacaoLogada,
-          tabelaAfetada: 'tb_cidadao',
-          idRegisto: cidadaoSalvo.idCidadao,
-          acao: AcaoAuditoria.EDITAR,
-          valorAntigo: valorAntes,
-          valorNovo: JSON.parse(JSON.stringify(cidadaoSalvo)),
-          idUtilizador: idUtilizadorLogado,
-          ip: ipRequest,
-        });
-        await manager.save(log);
+          manager.merge(Cidadao, cidadao, {
+            ...dto,
+            dataNascimento: dto.dataNascimento
+              ? new Date(dto.dataNascimento)
+              : cidadao.dataNascimento,
+            dataInscricao: dto.dataInscricao
+              ? new Date(dto.dataInscricao)
+              : cidadao.dataInscricao,
+            idUltimaModificacao: idUtilizadorLogado,
+            fotoPerfil: fotoPerfilAtual,
+            fotosCorpoCompleto: novaGaleriaCompleta,
+          });
 
-        // Eliminar fisicamente do disco após COMMIT com sucesso
-        if (caminhosFicheirosParaRemover.length > 0) {
-          for (const caminho of caminhosFicheirosParaRemover) {
-            await this.uploadService.removerFicheiroFisico(caminho);
+          const salvo = await manager.save(cidadao);
+
+          // Correção da associação: agora utilizando GrauDeficiencia coerentemente
+          if (dto.idGrausDeficiencias) {
+            await manager.delete(CidadaoDeficiencia, { idCidadao: id });
+
+            for (const idGrauDeficiencia of dto.idGrausDeficiencias) {
+              const grauDeficiencia = await manager.findOneBy(GrauDeficiencia, {
+                idGrauDeficiencia,
+              });
+              if (!grauDeficiencia) {
+                throw new NotFoundException(
+                  `Grau de deficiência [${idGrauDeficiencia}] não cadastrado.`,
+                );
+              }
+              const cd = manager.create(CidadaoDeficiencia, {
+                idOrganizacao: idOrganizacaoLogada,
+                idCidadao: salvo.idCidadao,
+                idGrauDeficiencia: idGrauDeficiencia,
+              });
+              await manager.save(cd);
+            }
           }
-        }
 
-        return cidadaoSalvo;
-      });
+          const log = manager.create(AuditoriaSistema, {
+            idOrganizacao: idOrganizacaoLogada,
+            tabelaAfetada: 'tb_cidadao',
+            idRegisto: salvo.idCidadao,
+            acao: AcaoAuditoria.EDITAR,
+            valorAntigo: valorAntes,
+            valorNovo: JSON.parse(JSON.stringify(salvo)),
+            idUtilizador: idUtilizadorLogado,
+            ip: ipRequest,
+          });
+          await manager.save(log);
+
+          return salvo;
+        },
+      );
+
+      // Remoção dos ficheiros físicos executada apenas após o COMMIT com sucesso
+      if (caminhosFicheirosParaRemover.length > 0) {
+        for (const caminho of caminhosFicheirosParaRemover) {
+          await this.uploadService.removerFicheiroFisico(caminho).catch(() => {
+            // Silencia ou registra falhas locais de IO para não quebrar a resposta HTTP pós-commit
+          });
+        }
+      }
+
+      return cidadaoSalvo;
     } catch (error) {
       if (
         error instanceof ConflictException ||
@@ -322,9 +329,12 @@ export class CidadaoService {
     }
   }
 
-  async buscarPorId(id: string, manager?: EntityManager): Promise<Cidadao> {
+  async buscarPorId(
+    id: string,
+    manager?: EntityManagerHelper,
+  ): Promise<Cidadao> {
     try {
-      const query = this.entityManagerHelper
+      const query = (manager ?? this.entityManagerHelper)
         .createQueryBuilder(Cidadao, 'c')
         .leftJoinAndSelect('c.bairro', 'b')
         .leftJoinAndSelect('c.organizacao', 'o')
@@ -367,50 +377,243 @@ export class CidadaoService {
         limit: Number(filtro.itensPorPagina) || 10,
       });
     } catch (error) {
+      // Se o erro já for uma exceção HTTP do NestJS (ex: vinda do construirQueryFiltro), relança-a diretamente
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // Registo do erro físico de paginação nos logs do servidor
+      this.logger.error('Falha na paginação da listagem de cidadãos:', error);
+
       throw new InternalServerErrorException(
-        'Erro de paginação na listagem de cidadãos.',
+        'Ocorreu um erro ao processar a paginação na listagem de cidadãos.',
       );
     }
   }
 
   private construirQueryFiltro(filtro: FiltroCidadaoDto) {
+    try {
+      const papelLogado = this.cls.get<PapelUtilizador>('papel');
+      const idOrganizacaoLogada = this.cls.get<string>('idOrganizacao');
+
+      const query = this.entityManagerHelper
+        .createQueryBuilder(Cidadao, 'c')
+        .leftJoinAndSelect('c.bairro', 'b')
+        .leftJoinAndSelect('c.organizacao', 'o')
+        .leftJoinAndSelect('c.cidadaoDeficiencias', 'cd')
+        .leftJoinAndSelect('cd.grauDeficiencia', 'gd')
+        .leftJoinAndSelect('gd.deficiencia', 'd')
+        .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO)
+        .whereEqual('c.genero', filtro.genero)
+        .whereIn('c.genero', filtro.generoIn)
+        .whereEqual('c.estado', filtro.estado)
+        .whereIn('c.estado', filtro.estadoIn)
+        .whereEqual('c.idBairro', filtro.idBairro)
+        .whereIn('c.idBairro', filtro.idBairroIn)
+        .whereEqual('d.idDeficiencia', filtro.idDeficiencia)
+        .whereIn('d.idDeficiencia', filtro.idDeficienciaIn)
+        .whereEqual('gd.idGrauDeficiencia', filtro.idGrauDeficiencia)
+        .whereIn('gd.idGrauDeficiencia', filtro.idGrauDeficienciaIn)
+        .whereSearch(['c.nomeCompleto'], filtro.nomeCompleto)
+        .whereDateRange(
+          'c.dataCriacao',
+          filtro.dataInicioCadastro,
+          filtro.dataFimCadastro,
+        )
+        .whereSearch(
+          [
+            'c.nomeCompleto',
+            'c.identificacao',
+            'c.descricaoEndereco',
+            'c.telefone',
+            'b.descricao',
+          ],
+          filtro.filtroTexto,
+        );
+
+      // --- INÍCIO DO AJUSTE: CONVERSÃO DE IDADE EM DATA DE NASCIMENTO ---
+      if (filtro.idadeMin !== undefined || filtro.idadeMax !== undefined) {
+        const hoje = new Date();
+
+        // Limite Inferior (Mais velhos): Para ter no máximo X anos, deve ter nascido após (hoje - (X + 1) anos)
+        const dataMinimaNascimento =
+          filtro.idadeMax !== undefined
+            ? new Date(
+                hoje.getFullYear() - (filtro.idadeMax + 1),
+                hoje.getMonth(),
+                hoje.getDate() + 1,
+              )
+            : undefined;
+
+        // Limite Superior (Mais jovens): Para ter no mínimo Y anos, deve ter nascido antes de (hoje - Y anos)
+        const dataMaximaNascimento =
+          filtro.idadeMin !== undefined
+            ? new Date(
+                hoje.getFullYear() - filtro.idadeMin,
+                hoje.getMonth(),
+                hoje.getDate(),
+              )
+            : undefined;
+
+        if (dataMinimaNascimento && dataMaximaNascimento) {
+          query.whereDateRange(
+            'c.dataNascimento',
+            dataMinimaNascimento,
+            dataMaximaNascimento,
+          );
+        } else if (dataMinimaNascimento) {
+          query.whereGreaterThanOrEqual(
+            'c.dataNascimento',
+            dataMinimaNascimento,
+          );
+        } else if (dataMaximaNascimento) {
+          query.whereLessThanOrEqual('c.dataNascimento', dataMaximaNascimento);
+        }
+      }
+      // --- FIM DO AJUSTE ---
+
+      if (filtro.ordenacao) {
+        Object.entries(filtro.ordenacao).forEach(([coluna, direcao], index) => {
+          if (index === 0) {
+            query.orderBy(`c.${coluna}`, direcao);
+          } else {
+            query.addOrderBy(`c.${coluna}`, direcao);
+          }
+        });
+      }
+
+      if (papelLogado !== PapelUtilizador.ADMINISTRADOR) {
+        query.whereEqual('c.idOrganizacao', idOrganizacaoLogada || '0');
+      }
+
+      return query;
+    } catch (error) {
+      // Registo fidedigno do erro para análise em logs internos do servidor
+      this.logger.error(
+        'Falha crítica ao estruturar a query de filtragem do cidadão:',
+        error,
+      );
+
+      throw new InternalServerErrorException(
+        'Ocorreu um erro interno ao processar os filtros de pesquisa da base de dados.',
+      );
+    }
+  }
+
+  async obterEstatisticasCards() {
+    try {
+      // 1. Definição das datas para cálculo de crescimento (Mês Atual vs Mês Anterior)
+      const agora = new Date();
+      const inicioMesAtual = new Date(agora.getFullYear(), agora.getMonth(), 1);
+      const fimMesAtual = new Date(
+        agora.getFullYear(),
+        agora.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
+
+      const inicioMesAnterior = new Date(
+        agora.getFullYear(),
+        agora.getMonth() - 1,
+        1,
+      );
+      const fimMesAnterior = new Date(
+        agora.getFullYear(),
+        agora.getMonth(),
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
+
+      // 2. Consultas de contagem utilizando a query base com suporte a Multi-Tenant
+      const totalGeral = await this.obterQueryBaseContagem().getCount();
+
+      const totalAtivos = await this.obterQueryBaseContagem()
+        .whereEqual('c.estado', EstadoCidadao.ATIVO)
+        .getCount();
+
+      const totalPendentes = await this.obterQueryBaseContagem()
+        .whereEqual('c.estado', EstadoCidadao.PENDENTE)
+        .getCount();
+
+      const totalInativos = await this.obterQueryBaseContagem()
+        .whereEqual('c.estado', EstadoCidadao.INATIVO)
+        .getCount();
+
+      // 3. Consultas para cálculo do percentual de crescimento mensal (+12% desde o último mês)
+      const inscritosMesAtual = await this.obterQueryBaseContagem()
+        .whereDateRange('c.dataInscricao', inicioMesAtual, fimMesAtual)
+        .getCount();
+
+      const inscritosMesAnterior = await this.obterQueryBaseContagem()
+        .whereDateRange('c.dataInscricao', inicioMesAnterior, fimMesAnterior)
+        .getCount();
+
+      // 4. Cálculos dos indicadores dinâmicos
+      // Crescimento de novas inscrições
+      let variacaoInscricoesTexto = '+0% desde o último mês';
+      if (inscritosMesAnterior > 0) {
+        const variacao = Math.round(
+          ((inscritosMesAtual - inscritosMesAnterior) / inscritosMesAnterior) *
+            100,
+        );
+        variacaoInscricoesTexto = `${variacao >= 0 ? '+' : ''}${variacao}% desde o último mês`;
+      } else if (inscritosMesAtual > 0) {
+        variacaoInscricoesTexto = `+100% desde o último mês`;
+      }
+
+      // Percentual de adesão (perfis ativos sobre o total)
+      const percentualAdesao =
+        totalGeral > 0 ? Math.round((totalAtivos / totalGeral) * 100) : 0;
+
+      // Percentual de rejeição/inativos (perfis inativos sobre o total)
+      const percentualRejeicao =
+        totalGeral > 0 ? Math.round((totalInativos / totalGeral) * 100) : 0;
+
+      // 5. Estrutura de retorno formatada para os cards do painel
+      return {
+        totalCidadaos: {
+          titulo: 'Total de Cidadãos',
+          valor: totalGeral,
+          subtexto: variacaoInscricoesTexto,
+        },
+        perfisAtivos: {
+          titulo: 'Perfis Ativos',
+          valor: totalAtivos,
+          subtexto: `${percentualAdesao}% de adesão na plataforma`,
+        },
+        pendencias: {
+          titulo: 'Pendências',
+          valor: totalPendentes,
+          subtexto: 'Requer atenção imediata',
+        },
+        perfisInativos: {
+          titulo: 'Perfis Inativos',
+          valor: totalInativos,
+          subtexto: `${percentualRejeicao}% de rejeição no cadastro`,
+        },
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Erro ao processar as estatísticas do painel.',
+      );
+    }
+  }
+
+  // Método auxiliar privado para reaproveitamento das regras de Multi-Tenant nas contagens
+  private obterQueryBaseContagem(): QueryBuilderHelper<Cidadao> {
     const papelLogado = this.cls.get<PapelUtilizador>('papel');
     const idOrganizacaoLogada = this.cls.get<string>('idOrganizacao');
 
     const query = this.entityManagerHelper
       .createQueryBuilder(Cidadao, 'c')
-      .leftJoinAndSelect('c.bairro', 'b')
-      .leftJoinAndSelect('c.organizacao', 'o')
-      .leftJoinAndSelect('c.cidadaoDeficiencias', 'cd')
-      .leftJoinAndSelect('cd.grauDeficiencia', 'gd')
-      .leftJoinAndSelect('gd.deficiencia', 'd')
-      .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO)
-      .whereSearch(
-        [
-          'c.nomeCompleto',
-          'c.identificacao',
-          'c.descricaoEndereco',
-          'c.telefone ',
-          'b.descricao',
-          '',
-        ],
-        filtro.nomeCompleto,
-      )
-      .whereLike('c.identificacao', filtro.identificacao)
-      .whereIn('c.idBairro', filtro.idBairroIn)
-      .whereLike('c.idBairro', filtro.idBairro)
-      .whereLike('cd.idDeficiencia', filtro.idDeficiencia)
-      .whereGreaterThanOrEqual(
-        'c.dataInscricao',
-        filtro.dataInicio ? new Date(filtro.dataInicio) : undefined,
-      )
-      .whereLessThanOrEqual(
-        'c.dataInscricao',
-        filtro.dataFim ? new Date(filtro.dataFim) : undefined,
-      )
-      .orderBy('c.nomeCompleto', 'ASC');
+      .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO);
 
-    // Restrição Multi-Tenant
     if (papelLogado !== PapelUtilizador.ADMINISTRADOR) {
       query.whereEqual('c.idOrganizacao', idOrganizacaoLogada || '0');
     }
@@ -431,7 +634,6 @@ export class CidadaoService {
       const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
       const ipRequest = this.cls.get<string>('ip');
 
-      // 1. Configurar Cabeçalhos HTTP para Transferência Chunked Binária Progressiva
       response.setHeader(
         'Content-Type',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -441,7 +643,6 @@ export class CidadaoService {
         'attachment; filename="cadastro-cidadaos.xlsx"',
       );
 
-      // 2. Instanciar o WorkbookWriter de Escrita de Baixíssimo Consumo em Disco/RAM (exceljs)
       const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
         stream: response,
         useStyles: true,
@@ -450,7 +651,6 @@ export class CidadaoService {
 
       const worksheet = workbook.addWorksheet('Cidadãos com Deficiência');
 
-      // Formatar Cabeçalhos da Folha Excel
       worksheet.columns = [
         { header: 'ID Cidadão', key: 'idCidadao', width: 36 },
         { header: 'Administração Municipal', key: 'organizacao', width: 40 },
@@ -466,7 +666,6 @@ export class CidadaoService {
         { header: 'Observações', key: 'observacoes', width: 40 },
       ];
 
-      // Formatar estilo do cabeçalho
       worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFF' } };
       worksheet.getRow(1).fill = {
         type: 'pattern',
@@ -474,23 +673,22 @@ export class CidadaoService {
         fgColor: { argb: '1F497D' },
       };
 
-      // 3. Obter a Query Base para Carregamento sob Lotes Paginados (Cursor Progressivo)
-      const query = this.construirQueryFiltro(filtro);
-
       let paginaAtual = 1;
-      const limiteLote = 250; // Escreve 250 linhas na memória por vez antes de descarregar (Flush)
+      const limiteLote = 250;
       let temMaisRegistos = true;
 
       while (temMaisRegistos) {
-        const paginado = await query.paginate({
-          page: paginaAtual,
-          limit: limiteLote,
-        });
+        const offset = (paginaAtual - 1) * limiteLote;
 
-        for (const cidadao of paginado.items) {
-          // Reunir as deficiências diagnosticadas num único texto para o relatório
+        // Executa busca direta sem realizar o COUNT no banco de dados
+        const itens = await this.construirQueryFiltro(filtro)
+          .take(limiteLote)
+          .skip(offset)
+          .getMany();
+
+        for (const cidadao of itens) {
           const deficienciasTexto = cidadao.cidadaoDeficiencias
-            .map((cd) => cd.grauDeficiencia?.deficiencia.descricao)
+            .map((cd) => cd.grauDeficiencia?.deficiencia?.descricao)
             .filter(Boolean)
             .join(', ');
 
@@ -509,20 +707,18 @@ export class CidadaoService {
               deficiencias: deficienciasTexto,
               observacoes: cidadao.observacoes || 'Sem notas adicionais.',
             })
-            .commit(); // Limpa a linha da RAM e joga direto para o Stream de Resposta HTTP!
+            .commit();
         }
 
-        if (paginado.meta.currentPage >= paginado.meta.totalPages) {
+        if (itens.length < limiteLote) {
           temMaisRegistos = false;
         } else {
           paginaAtual++;
         }
       }
 
-      // Finalizar escrita do Excel
       await workbook.commit();
 
-      // Gravar Log de Auditoria da Exportação de Dados do Cidadão
       await this.entityManagerHelper.transaction(async (manager) => {
         const log = manager.create(AuditoriaSistema, {
           idOrganizacao: idOrganizacaoLogada || 'GLOBAL',

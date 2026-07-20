@@ -24,13 +24,23 @@ import { IApiResponse } from '../../core/interfaces/api-response.interface';
 import { Cidadao } from './entities/cidadao.entity';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { FileCleanupInterceptor } from '../../core/interceptors/file-cleanup.interceptor';
-import { CidadaoCorpoUploadInterceptor } from './interceptors/cidadao-corpo-upload.interceptor';
-import { CidadaoPerfilUploadInterceptor } from './interceptors/cidadao-perfil-upload.interceptor';
+import {
+  CidadaoCorpoUploadInterceptor,
+  pathFotoCorpoCidadao,
+} from './interceptors/cidadao-corpo-upload.interceptor';
+import {
+  CidadaoPerfilUploadInterceptor,
+  pathFotoPerfilCidadao,
+} from './interceptors/cidadao-perfil-upload.interceptor';
 import { Public } from '../../core/decorators/public.decorator';
+import { UploadService } from '../../core/upload/upload.service';
 
 @Controller('cidadaos')
 export class CidadaoController {
-  constructor(private readonly cidadaoService: CidadaoService) {}
+  constructor(
+    private readonly cidadaoService: CidadaoService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   @Post()
   @RolesPapelUtilizador(
@@ -103,22 +113,6 @@ export class CidadaoController {
     const a = await this.cidadaoService.exportarExcelProgressivo(dto, res);
   }
 
-  @Get(':id')
-  @RolesPapelUtilizador(
-    PapelUtilizador.ADMINISTRADOR,
-    PapelUtilizador.SUPERVISOR,
-    PapelUtilizador.CADASTRADOR,
-    PapelUtilizador.CONSULTA,
-  )
-  @HttpCode(HttpStatus.OK)
-  async buscarPorId(@Param('id') id: string): Promise<IApiResponse<Cidadao>> {
-    const cidadao = await this.cidadaoService.buscarPorId(id);
-    return {
-      message: 'Ficha do cidadão localizada com sucesso.',
-      body: cidadao,
-    };
-  }
-
   @Get()
   @RolesPapelUtilizador(
     PapelUtilizador.ADMINISTRADOR,
@@ -141,5 +135,63 @@ export class CidadaoController {
         itensPorPagina: paginado.meta.itemCount,
       },
     };
+  }
+
+  @Get('estatisticas')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+    PapelUtilizador.CADASTRADOR,
+    PapelUtilizador.CONSULTA,
+  )
+  @HttpCode(HttpStatus.OK)
+  async obterEstatisticas(): Promise<IApiResponse<any>> {
+    const estatisticas = await this.cidadaoService.obterEstatisticasCards();
+    return {
+      message: 'Estatísticas do painel recuperadas com sucesso.',
+      body: estatisticas,
+    };
+  }
+
+  @Get(':id')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+    PapelUtilizador.CADASTRADOR,
+    PapelUtilizador.CONSULTA,
+  )
+  @HttpCode(HttpStatus.OK)
+  async buscarPorId(@Param('id') id: string): Promise<IApiResponse<Cidadao>> {
+    const cidadao = await this.cidadaoService.buscarPorId(id);
+    return {
+      message: 'Ficha do cidadão localizada com sucesso.',
+      body: cidadao,
+    };
+  }
+
+  @Get('img/perfil/:nomeArquivo')
+  @Public()
+  servirFotoPerfil(
+    @Param('nomeArquivo') nomeArquivo: string,
+    @Res() res: Response,
+  ) {
+    const caminhoFisico = this.uploadService.obterCaminhoFisicoFicheiro(
+      pathFotoPerfilCidadao,
+      nomeArquivo,
+    );
+    return res.sendFile(caminhoFisico);
+  }
+
+  @Get('img/corpo/:nomeArquivo')
+  @Public()
+  servirFotoCorpo(
+    @Param('nomeArquivo') nomeArquivo: string,
+    @Res() res: Response,
+  ) {
+    const caminhoFisico = this.uploadService.obterCaminhoFisicoFicheiro(
+      pathFotoCorpoCidadao,
+      nomeArquivo,
+    );
+    return res.sendFile(caminhoFisico);
   }
 }

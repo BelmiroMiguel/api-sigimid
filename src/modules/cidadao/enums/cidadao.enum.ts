@@ -29,3 +29,15 @@ export enum GrauDeficiencia {
   GRAVE = 'GRAVE',
   PROFUNDO = 'PROFUNDO',
 }
+
+export enum Genero {
+  MASCULINO = 'm',
+  FEMININO = 'f',
+}
+
+export enum CidadaoOrdenacaoColunas {
+  NOME_COMPLETO = 'nomeCompleto',
+  DATA_INSCRICAO = 'dataCriacao',
+  DATA_NASCIMENTO = 'dataNascimento',
+  GENERO = 'genero',
+}

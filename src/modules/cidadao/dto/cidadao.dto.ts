@@ -10,11 +10,13 @@ import {
   Min,
   Matches,
   ValidateIf,
+  IsObject,
 } from 'class-validator';
 import {
   TipoIdentificacaoCidadao,
   EstadoCidadao,
   FormatoExportacao,
+  CidadaoOrdenacaoColunas,
 } from '../enums/cidadao.enum';
 import { Transform, Type } from 'class-transformer';
 
@@ -80,16 +82,12 @@ export class CriarCidadaoDto {
   @IsDateString()
   dataInscricao: string;
 
+  @IsOptional()
   @IsNotEmpty({ message: 'Associe pelo menos uma tipologia de deficiência.' })
   @IsArray({
-    each: true,
     message: 'As deficiências devem ser fornecidas como uma lista de IDs.',
   })
-  //@IsUUID('4', {
-  //  each: true,
-  //  message: 'Cada ID de deficiência deve ser um UUID válido.',
-  //})
-  @IsOptional()
+  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
   grausDeficiencias: string[];
 
   @IsOptional()
@@ -143,6 +141,7 @@ export class EditarCidadaoDto {
 
   @IsOptional()
   @IsArray()
+  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
   //@IsUUID('4', { each: true })
   idGrausDeficiencias?: string[];
 
@@ -183,12 +182,61 @@ export class FiltroCidadaoDto {
   itensPorPagina?: number = 10;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  idadeMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  idadeMax?: number;
+
+  @IsOptional()
+  @IsString()
+  filtroTexto?: string;
+
+  @IsOptional()
   @IsString()
   nomeCompleto?: string;
 
   @IsOptional()
   @IsString()
+  genero?: string;
+
+  // NOVO: Validação para array de géneros selecionados
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  generoIn?: string[];
+
+  @IsOptional()
+  @IsString()
   identificacao?: string;
+
+  @IsOptional()
+  @IsEnum(TipoIdentificacaoCidadao)
+  tipoIdentificacao?: TipoIdentificacaoCidadao;
+
+  @IsOptional()
+  @IsEnum(TipoIdentificacaoCidadao, { each: true })
+  @IsArray()
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  tipoIdentificacaoIn?: TipoIdentificacaoCidadao[];
+
+  // NOVO: Validação para estado singular (Ativo, Pendente, etc.)
+  @IsOptional()
+  @IsEnum(EstadoCidadao)
+  estado?: EstadoCidadao;
+
+  // NOVO: Validação para array de estados selecionados
+  @IsOptional()
+  @IsEnum(EstadoCidadao, { each: true })
+  @IsArray()
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  estadoIn?: EstadoCidadao[];
 
   @IsOptional()
   //@IsUUID('4')
@@ -196,33 +244,76 @@ export class FiltroCidadaoDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
   idBairroIn?: string[];
 
+  // NOVO: Validação para ID de Deficiência singular
   @IsOptional()
-  @IsEnum(TipoIdentificacaoCidadao, { each: true })
-  @IsArray()
-  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
-  tipoIdentificacaoIn?: TipoIdentificacaoCidadao[];
-
-  @IsOptional()
-  @IsEnum(TipoIdentificacaoCidadao)
-  tipoIdentificacao?: TipoIdentificacaoCidadao;
-
-  @IsOptional()
-  //@IsUUID('4')
+  @IsString()
   idDeficiencia?: string;
 
+  // NOVO: Validação para array de IDs de Deficiências
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
   idDeficienciaIn?: string[];
 
+  // NOVO: Validação para ID de Grau de Deficiência singular
   @IsOptional()
-  @IsDateString()
-  dataInicio?: string;
+  @IsString()
+  idGrauDeficiencia?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => (Array.isArray(value) ? value : [value]))
+  idGrauDeficienciaIn?: string[];
 
   @IsOptional()
   @IsDateString()
-  dataFim?: string;
+  dataInicioCadastro?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dataFimCadastro?: string;
+
+  @IsOptional()
+  @IsObject({
+    message: 'A propriedade de ordenação deve ser um objeto válido.',
+  })
+  @Transform(({ value }) => {
+    // Caso chegue como string JSON do front-end, faz o parse preventivo
+    if (typeof value === 'string' && value.trim()) {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return undefined;
+      }
+    }
+
+    if (typeof value !== 'object' || value === null) return undefined;
+
+    const objetoSanitizado: Record<string, 'ASC' | 'DESC'> = {};
+    const colunasValidas = Object.values(CidadaoOrdenacaoColunas) as string[];
+
+    for (const [coluna, direcao] of Object.entries(value)) {
+      const direcaoUpper = String(direcao).toUpperCase();
+
+      if (
+        colunasValidas.includes(coluna) &&
+        (direcaoUpper === 'ASC' || direcaoUpper === 'DESC')
+      ) {
+        objetoSanitizado[coluna] = direcaoUpper;
+      }
+    }
+
+    return Object.keys(objetoSanitizado).length > 0
+      ? objetoSanitizado
+      : undefined;
+  })
+  ordenacao?: Record<CidadaoOrdenacaoColunas, 'ASC' | 'DESC'>;
 }
 
 export class ExportarCidadaoDto {

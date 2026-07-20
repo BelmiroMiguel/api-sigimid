@@ -3,6 +3,11 @@
 /node_modules
 /build
 
+/uploads
+
+.npmrc
+package-lock.json
+
 # Logs
 logs
 *.log

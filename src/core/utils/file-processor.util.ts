@@ -22,8 +22,9 @@ export class FileProcessor {
     return `/${pasta}/${uuid}/${nomeFicheiro}`;
   }
 
-  obterAvatarDefault(nome: string): string {
+  obterAvatarDefault(...nome: string[]): string {
     const iniciais = nome
+      .join('')
       .split(' ')
       .map((n) => n[0])
       .join('+')

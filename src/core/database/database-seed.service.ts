@@ -50,7 +50,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
     }
   }
 
-  private async criarEmpresa(manager: EntityManager) {
+  private async criarEmpresa(manager: EntityManagerHelper) {
     const novaEmpresa = manager.create(Organizacao, {
       descricao:
         'SIGIMID - Sistema de Gestão Municipal de Inclusão do Cidadão com Deficiência',
@@ -60,7 +60,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
   }
 
   private async criarAdminFuncionario(
-    manager: EntityManager,
+    manager: EntityManagerHelper,
     empresaSalva: Organizacao,
   ) {
     const senha = 'admin123';
@@ -79,7 +79,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
   }
 
   private async criarProvincias(
-    manager: EntityManager,
+    manager: EntityManagerHelper,
     utilizador: Utilizador,
   ) {
     const novasProvincias = manager.create(Provincia, [
@@ -113,7 +113,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
         descricao: 'Icolo e bengo',
         municipios: [{ descricao: 'Bom Jesus' }, { descricao: 'Catete' }],
       },
-    ]);
+    ]) as Provincia[];
 
     const provincias = await manager.save(
       Provincia,
@@ -134,7 +134,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
   }
 
   private async criarMunicipiosEBairros(
-    manager: EntityManager,
+    manager: EntityManagerHelper,
     provincias: Provincia[],
     utilizador: Utilizador,
   ) {
@@ -181,7 +181,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
   }
 
   private async criarDeficiencias(
-    manager: EntityManager,
+    manager: EntityManagerHelper,
     utilizador: Utilizador,
   ) {
     const novasDeficiencias = manager.create(Deficiencia, [
@@ -201,7 +201,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
           { descricao: 'Cegueira' },
         ],
       },
-    ]);
+    ]) as Deficiencia[];
 
     const deficienciasCriadas = await manager.save(
       Deficiencia,

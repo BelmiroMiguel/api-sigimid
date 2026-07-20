@@ -11,9 +11,14 @@ import {
 import { Organizacao } from '../../organizacao/entities/organizacao.entity';
 import { Bairro } from '../../geografia/entities/bairro.entity';
 import { Utilizador } from '../../utilizador/entities/utilizador.entity';
-import { TipoIdentificacaoCidadao, EstadoCidadao } from '../enums/cidadao.enum';
+import {
+  TipoIdentificacaoCidadao,
+  EstadoCidadao,
+  Genero,
+} from '../enums/cidadao.enum';
 import { AuditFields } from '../../../core/database/audit-fields.abstract';
 import { CidadaoDeficiencia } from './cidadao-deficiencia.entity';
+import { UploadService } from '../../../core/upload/upload.service';
 
 @Entity({ name: 'tb_cidadao' })
 @Index(
@@ -60,6 +65,14 @@ export class Cidadao extends AuditFields {
     nullable: false,
   })
   tipoIdentificacao: TipoIdentificacaoCidadao;
+
+  @Column({
+    name: 'genero',
+    type: 'enum',
+    enum: Genero,
+    nullable: false,
+  })
+  genero: Genero;
 
   @Column({ name: 'dataNascimento', type: 'date', nullable: false })
   dataNascimento: Date;
@@ -122,19 +135,16 @@ export class Cidadao extends AuditFields {
 
   @AfterLoad()
   private afterLoad() {
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-
-    // Formatação da Foto de Perfil
     this.fotoPerfilBase = this.fotoPerfil;
-    if (this.fotoPerfil) {
-      this.fotoPerfil = `${baseUrl}/img/${this.fotoPerfil}`;
-    }
+    this.fotoPerfil = UploadService.carregarUrlBaseFicheiro(
+      'cidadaos/img/perfil',
+      this.fotoPerfil,
+    );
 
-    // Formatação da Galeria JSON de Corpo Completo
     this.fotosCorpoCompletoBase = this.fotosCorpoCompleto;
     if (this.fotosCorpoCompleto && Array.isArray(this.fotosCorpoCompleto)) {
-      this.fotosCorpoCompleto = this.fotosCorpoCompleto.map(
-        (caminho) => `${baseUrl}/img/${caminho}`,
+      this.fotosCorpoCompleto = this.fotosCorpoCompleto.map((caminho) =>
+        UploadService.carregarUrlBaseFicheiro('cidadaos/img/corpo', caminho),
       );
     }
   }

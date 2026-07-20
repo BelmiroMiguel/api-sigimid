@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,6 +19,7 @@ export class UploadService {
     'image/jpg',
   ];
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async guardarFicheiro(
     file: Express.Multer.File,
     subpastaContexto: string,
@@ -100,9 +102,31 @@ export class UploadService {
     }
   }
 
-  public carregarUrlBaseFicheiro(subRota: string, nomeFicheiro?: string) {
+  public static carregarUrlBaseFicheiro(
+    subRota: string,
+    nomeFicheiro?: string,
+  ) {
     const baseUrl = process.env.BASE_URL;
     const ficheiro = nomeFicheiro ?? 'default.png';
     return `${baseUrl}/${subRota}/${ficheiro}`;
+  }
+
+  obterCaminhoFisicoFicheiro(
+    subpastaContexto: string,
+    nomeFicheiro: string,
+  ): string {
+    const caminhoFisicoCompleto = path.join(
+      this.pastaRaizUpload,
+      subpastaContexto,
+      nomeFicheiro,
+    );
+
+    if (!fs.existsSync(caminhoFisicoCompleto)) {
+      throw new NotFoundException(
+        'O ficheiro solicitado não existe no servidor.',
+      );
+    }
+
+    return caminhoFisicoCompleto;
   }
 }

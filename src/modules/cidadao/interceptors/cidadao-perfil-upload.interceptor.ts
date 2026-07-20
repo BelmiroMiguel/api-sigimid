@@ -8,6 +8,8 @@ import { Observable, from, of } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { UploadService } from '../../../core/upload/upload.service';
 
+export const pathFotoPerfilCidadao = 'cidadaos/perfil';
+
 @Injectable()
 export class CidadaoPerfilUploadInterceptor implements NestInterceptor {
   constructor(private readonly uploadService: UploadService) {}
@@ -26,13 +28,13 @@ export class CidadaoPerfilUploadInterceptor implements NestInterceptor {
     }
 
     return from(
-      this.uploadService.guardarFicheiro(file, 'cidadaos/perfil'),
+      this.uploadService.guardarFicheiro(file, pathFotoPerfilCidadao),
     ).pipe(
       switchMap((res) => {
         // Injeta o caminho gerado no body
         request.body.fotoPerfil = res.nomeFicheiro;
 
-        // Regra de Ouro: Recupera a lista existente e faz a mesclagem (merge) para não sobrescrever
+        // Recupera a lista existente e faz a mesclagem (merge) para não sobrescrever
         const ficheirosExistentes = request.ficheirosCarregadosSucesso || [];
         ficheirosExistentes.push(res.caminhoFicheiro);
         request.ficheirosCarregadosSucesso = ficheirosExistentes;
