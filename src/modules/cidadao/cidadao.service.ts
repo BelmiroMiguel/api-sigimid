@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   HttpException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   EntityManagerHelper,
@@ -51,6 +52,16 @@ export class CidadaoService {
         .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO)
         .getOne();
 
+      if (!dto.fotoPerfil || !dto.fotoPerfil.length) {
+        throw new BadRequestException('Adicione uma foto de identificação.');
+      }
+
+      if (!dto.fotosCorpoCompleto || !dto.fotosCorpoCompleto.length) {
+        throw new BadRequestException(
+          'Adicione pelo menos uma imagem do corpo completo.',
+        );
+      }
+
       if (cadastroExiste) {
         throw new ConflictException(
           `Já existe um cidadão registado em Angola com este documento [${dto.tipoIdentificacao}: ${dto.identificacao}].`,
@@ -76,15 +87,16 @@ export class CidadaoService {
         // Inserir Cidadao
         const novoCidadao = manager.create(Cidadao, {
           idOrganizacao: idOrganizacaoLogada,
-          nomeCompleto: dto.nomeCompleto,
-          identificacao: dto.identificacao,
+          nomeCompleto: dto.nomeCompleto.trim(),
+          genero: dto.genero,
+          identificacao: dto.identificacao.trim(),
           tipoIdentificacao: dto.tipoIdentificacao,
           dataNascimento: new Date(dto.dataNascimento),
-          telefone: dto.telefone || null,
+          telefone: dto.telefone?.trim() || null,
           idBairro: dto.idBairro,
-          descricaoEndereco: dto.descricaoEndereco,
+          descricaoEndereco: dto.descricaoEndereco.trim(),
           dataInscricao: new Date(dto.dataInscricao),
-          observacoes: dto.observacoes || null,
+          observacoes: dto.observacoes?.trim() || null,
           idUtilizadorCriador: idUtilizadorLogado,
           idUltimaModificacao: idUtilizadorLogado,
           fotoPerfil: dto.fotoPerfil,
@@ -142,6 +154,7 @@ export class CidadaoService {
       });
     } catch (error) {
       if (
+        error instanceof BadRequestException ||
         error instanceof ConflictException ||
         error instanceof NotFoundException
       )
@@ -219,6 +232,7 @@ export class CidadaoService {
 
           manager.merge(Cidadao, cidadao, {
             ...dto,
+            bairro: { idBairro: dto.idBairro },
             dataNascimento: dto.dataNascimento
               ? new Date(dto.dataNascimento)
               : cidadao.dataNascimento,
@@ -228,6 +242,7 @@ export class CidadaoService {
             idUltimaModificacao: idUtilizadorLogado,
             fotoPerfil: fotoPerfilAtual,
             fotosCorpoCompleto: novaGaleriaCompleta,
+            descricaoEndereco: dto.descricaoEndereco,
           });
 
           const salvo = await manager.save(cidadao);
@@ -337,10 +352,17 @@ export class CidadaoService {
       const query = (manager ?? this.entityManagerHelper)
         .createQueryBuilder(Cidadao, 'c')
         .leftJoinAndSelect('c.bairro', 'b')
+        .leftJoinAndSelect('b.municipio', 'm')
+        .leftJoinAndSelect('m.provincia', 'p')
         .leftJoinAndSelect('c.organizacao', 'o')
+        .leftJoinAndSelect('c.utilizadorCriador', 'uc')
+        .leftJoinAndSelect('c.utilizadorEditor', 'ue')
+        .leftJoinAndSelect('c.utilizadorSupervisor', 'us')
         .leftJoinAndSelect('c.cidadaoDeficiencias', 'cd')
         .leftJoinAndSelect('cd.grauDeficiencia', 'gd')
         .leftJoinAndSelect('gd.deficiencia', 'd')
+        .leftJoinAndSelect('c.cidadaoCondicoesEspeciais', 'cce')
+        .leftJoinAndSelect('cce.condicaoEspecial', 'ce')
         .whereEqual('c.idCidadao', id)
         .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO);
 
@@ -399,10 +421,17 @@ export class CidadaoService {
       const query = this.entityManagerHelper
         .createQueryBuilder(Cidadao, 'c')
         .leftJoinAndSelect('c.bairro', 'b')
+        .leftJoinAndSelect('b.municipio', 'm')
+        .leftJoinAndSelect('m.provincia', 'p')
         .leftJoinAndSelect('c.organizacao', 'o')
+        .leftJoinAndSelect('c.utilizadorCriador', 'uc')
+        .leftJoinAndSelect('c.utilizadorEditor', 'ue')
+        .leftJoinAndSelect('c.utilizadorSupervisor', 'us')
         .leftJoinAndSelect('c.cidadaoDeficiencias', 'cd')
         .leftJoinAndSelect('cd.grauDeficiencia', 'gd')
         .leftJoinAndSelect('gd.deficiencia', 'd')
+        .leftJoinAndSelect('c.cidadaoCondicoesEspeciais', 'cce')
+        .leftJoinAndSelect('cce.condicaoEspecial', 'ce')
         .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO)
         .whereEqual('c.genero', filtro.genero)
         .whereIn('c.genero', filtro.generoIn)
@@ -474,12 +503,14 @@ export class CidadaoService {
 
       if (filtro.ordenacao) {
         Object.entries(filtro.ordenacao).forEach(([coluna, direcao], index) => {
-          if (index === 0) {
-            query.orderBy(`c.${coluna}`, direcao);
-          } else {
-            query.addOrderBy(`c.${coluna}`, direcao);
-          }
+          query.orderBy(`c.${coluna}`, direcao);
+          //if (index === 0) {
+          //} else {
+          //  query.addOrderBy(`c.${coluna}`, direcao);
+          //}
         });
+      } else {
+        query.orderBy('c.nomeCompleto', 'ASC');
       }
 
       if (papelLogado !== PapelUtilizador.ADMINISTRADOR) {

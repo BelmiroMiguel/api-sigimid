@@ -20,6 +20,7 @@ export class Bairro extends AuditFields {
   @ManyToOne(() => Municipio, (municipio) => municipio.bairros, {
     nullable: false,
     onDelete: 'RESTRICT',
+    eager: true,
   })
   @JoinColumn({ name: 'idMunicipio' })
   municipio: Municipio;

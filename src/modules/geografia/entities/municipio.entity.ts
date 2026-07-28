@@ -22,6 +22,7 @@ export class Municipio extends AuditFields {
   @ManyToOne(() => Provincia, (provincia) => provincia.municipios, {
     nullable: false,
     onDelete: 'RESTRICT',
+    eager: true,
   })
   @JoinColumn({ name: 'idProvincia' })
   provincia: Provincia;
@@ -38,6 +39,6 @@ export class Municipio extends AuditFields {
   })
   estado: EstadoGeografia;
 
-  @OneToMany(() => Bairro, (bairro) => bairro.municipio)
+  @OneToMany(() => Bairro, (bairro) => bairro.municipio, {})
   bairros: Bairro[];
 }

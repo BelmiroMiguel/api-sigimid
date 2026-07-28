@@ -8,8 +8,8 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { DeficienciaService } from './deficiencia.service';
 import {
+  CriarCondicaoEspecialDto,
   CriarDeficienciaDto,
   EditarDeficienciaDto,
   FiltroDeficienciaDto,
@@ -18,69 +18,66 @@ import { RolesPapelUtilizador } from '../../core/decorators/roles-papel-utilizad
 import { PapelUtilizador } from '../utilizador/enums/utilizador.enum';
 import { IApiResponse } from '../../core/interfaces/api-response.interface';
 import { Deficiencia } from './entities/deficiencia.entity';
+import { CondicaoEspecialService } from './condicao-especial.service';
+import { CondicaoEspecial } from './entities/condicao-especial.entity';
 
-@Controller('deficiencias')
-export class DeficienciaController {
-  constructor(private readonly service: DeficienciaService) {}
+@Controller('condicoes-especiais')
+@RolesPapelUtilizador(
+  PapelUtilizador.ADMINISTRADOR,
+  PapelUtilizador.CADASTRADOR,
+  PapelUtilizador.SUPERVISOR,
+)
+export class CondicaoEspecialController {
+  constructor(private readonly service: CondicaoEspecialService) {}
 
   @Post()
-  @RolesPapelUtilizador(
-    PapelUtilizador.ADMINISTRADOR,
-    PapelUtilizador.SUPERVISOR,
-  )
+  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
   @HttpCode(HttpStatus.CREATED)
   async criar(
-    @Body() dto: CriarDeficienciaDto,
-  ): Promise<IApiResponse<Deficiencia>> {
-    const deficiencia = await this.service.criar(dto);
+    @Body() dto: CriarCondicaoEspecialDto,
+  ): Promise<IApiResponse<CondicaoEspecial>> {
+    const data = await this.service.criar(dto);
     return {
-      message: 'Tipologia de deficiência registada com sucesso.',
-      body: deficiencia,
+      message: 'Condicao especial registada com sucesso.',
+      body: data,
     };
   }
 
   @Post(':id/editar')
-  @RolesPapelUtilizador(
-    PapelUtilizador.ADMINISTRADOR,
-    PapelUtilizador.SUPERVISOR,
-  )
+  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
   @HttpCode(HttpStatus.OK)
   async editar(
     @Param('id') id: string,
-    @Body() dto: EditarDeficienciaDto,
-  ): Promise<IApiResponse<Deficiencia>> {
-    const deficiencia = await this.service.editar(id, dto);
+    @Body() dto: CriarCondicaoEspecialDto,
+  ): Promise<IApiResponse<CondicaoEspecial>> {
+    const data = await this.service.editar(id, dto);
     return {
-      message: 'Tipologia de deficiência atualizada com sucesso.',
-      body: deficiencia,
-    };
-  }
-
-  @Post(':id/restaurar')
-  @RolesPapelUtilizador(
-    PapelUtilizador.ADMINISTRADOR,
-    PapelUtilizador.SUPERVISOR,
-  )
-  @HttpCode(HttpStatus.OK)
-  async restaurar(@Param('id') id: string): Promise<IApiResponse<null>> {
-    await this.service.restaurar(id);
-    return {
-      message: 'Tipologia de deficiência restaurada com sucesso.',
-      body: null,
+      message: 'Condicao especial atualizada com sucesso.',
+      body: data,
     };
   }
 
   @Post(':id/eliminar')
-  @RolesPapelUtilizador(
-    PapelUtilizador.ADMINISTRADOR,
-    PapelUtilizador.SUPERVISOR,
-  )
+  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
   @HttpCode(HttpStatus.OK)
   async eliminar(@Param('id') id: string): Promise<IApiResponse<null>> {
     await this.service.eliminar(id);
     return {
-      message: 'Tipologia de deficiência removida com sucesso.',
+      message: 'Condicao especial removida com sucesso.',
       body: null,
+    };
+  }
+
+  @Post(':id/restaurar')
+  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
+  @HttpCode(HttpStatus.OK)
+  async restaurar(
+    @Param('id') id: string,
+  ): Promise<IApiResponse<CondicaoEspecial>> {
+    const ce = await this.service.restaurar(id);
+    return {
+      message: 'Condicao especial restaurada com sucesso.',
+      body: ce,
     };
   }
 
@@ -110,11 +107,11 @@ export class DeficienciaController {
   @HttpCode(HttpStatus.OK)
   async buscarPorId(
     @Param('id') id: string,
-  ): Promise<IApiResponse<Deficiencia>> {
-    const deficiencia = await this.service.buscarPorId(id);
+  ): Promise<IApiResponse<CondicaoEspecial>> {
+    const data = await this.service.buscarPorId(id);
     return {
-      message: 'Tipologia de deficiência localizada com sucesso.',
-      body: deficiencia,
+      message: 'Condicao especial localizada com sucesso.',
+      body: data,
     };
   }
 
@@ -128,7 +125,7 @@ export class DeficienciaController {
   @HttpCode(HttpStatus.OK)
   async listar(
     @Query() filtro: FiltroDeficienciaDto,
-  ): Promise<IApiResponse<Deficiencia[]>> {
+  ): Promise<IApiResponse<CondicaoEspecial[]>> {
     const paginado = await this.service.listar(filtro);
     return {
       message: 'Lista de tipologias de deficiência recuperada com sucesso.',

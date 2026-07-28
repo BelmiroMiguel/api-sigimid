@@ -36,8 +36,8 @@ export enum Genero {
 }
 
 export enum CidadaoOrdenacaoColunas {
+  GENERO = 'genero',
   NOME_COMPLETO = 'nomeCompleto',
   DATA_INSCRICAO = 'dataCriacao',
   DATA_NASCIMENTO = 'dataNascimento',
-  GENERO = 'genero',
 }

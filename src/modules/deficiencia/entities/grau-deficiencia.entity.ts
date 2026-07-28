@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { AuditFields } from '../../../core/database/audit-fields.abstract';
 import { Deficiencia } from './deficiencia.entity';
+import { EstadoDeficiencia } from '../enums/deficiencia.enum';
 
 @Entity({ name: 'tb_grau_deficiencia' })
 @Index('idx_grau_deficiencia_descricao', ['descricao', 'dataEliminacao'], {
@@ -27,11 +28,19 @@ export class GrauDeficiencia extends AuditFields {
 
   @ManyToOne(() => Deficiencia, (gd) => gd.graus, {
     nullable: false,
-    onDelete: 'RESTRICT',
   })
   @JoinColumn({ name: 'idDeficiencia' })
   deficiencia: Deficiencia;
 
   @Column({ name: 'descricao', type: 'varchar', length: 100, nullable: false })
   descricao: string;
+
+  @Column({
+    name: 'estado',
+    type: 'enum',
+    enum: EstadoDeficiencia,
+    default: EstadoDeficiencia.ATIVO,
+    nullable: false,
+  })
+  estado: EstadoDeficiencia;
 }

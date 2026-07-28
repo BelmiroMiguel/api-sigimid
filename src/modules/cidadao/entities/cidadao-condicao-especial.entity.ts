@@ -6,14 +6,13 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Cidadao } from './cidadao.entity';
-import { Deficiencia } from '../../deficiencia/entities/deficiencia.entity';
 import { Organizacao } from '../../organizacao/entities/organizacao.entity';
-import { GrauDeficiencia } from '../../deficiencia/entities/grau-deficiencia.entity';
+import { CondicaoEspecial } from '../../deficiencia/entities/condicao-especial.entity';
 
-@Entity({ name: 'tb_cidadao_deficiencia' })
-export class CidadaoDeficiencia {
-  @PrimaryGeneratedColumn('uuid', { name: 'idCidadaoDeficiencia' })
-  idCidadaoDeficiencia: string;
+@Entity({ name: 'tb_cidadao_condicao_especial' })
+export class CidadaoCondicaoEspecial {
+  @PrimaryGeneratedColumn('uuid', { name: 'idCidadaoCondicaoEspecial' })
+  idCidadaoCondicaoEspecial: string;
 
   @Column({
     name: 'idOrganizacao',
@@ -23,14 +22,14 @@ export class CidadaoDeficiencia {
   })
   idOrganizacao: string;
 
-  @ManyToOne(() => Organizacao, { nullable: false })
+  @ManyToOne(() => Organizacao, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'idOrganizacao' })
   organizacao: Organizacao;
 
   @Column({ name: 'idCidadao', type: 'varchar', length: 36, nullable: false })
   idCidadao: string;
 
-  @ManyToOne(() => Cidadao, (cidadao) => cidadao.cidadaoDeficiencias, {
+  @ManyToOne(() => Cidadao, (c) => c.cidadaoCondicoesEspeciais, {
     nullable: false,
     onDelete: 'CASCADE',
   })
@@ -38,14 +37,14 @@ export class CidadaoDeficiencia {
   cidadao: Cidadao;
 
   @Column({
-    name: 'idGrauDeficiencia',
+    name: 'idCondicaoEspecial',
     type: 'varchar',
     length: 36,
     nullable: false,
   })
-  idGrauDeficiencia: string;
+  idCondicaoEspecial: string;
 
-  @ManyToOne(() => GrauDeficiencia, { nullable: false })
-  @JoinColumn({ name: 'idGrauDeficiencia' })
-  grauDeficiencia: GrauDeficiencia;
+  @ManyToOne(() => CondicaoEspecial, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idCondicaoEspecial' })
+  condicaoEspecial: CondicaoEspecial;
 }

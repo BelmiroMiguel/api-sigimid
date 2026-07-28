@@ -19,6 +19,7 @@ import {
 import { AuditFields } from '../../../core/database/audit-fields.abstract';
 import { CidadaoDeficiencia } from './cidadao-deficiencia.entity';
 import { UploadService } from '../../../core/upload/upload.service';
+import { CidadaoCondicaoEspecial } from './cidadao-condicao-especial.entity';
 
 @Entity({ name: 'tb_cidadao' })
 @Index(
@@ -38,9 +39,54 @@ export class Cidadao extends AuditFields {
   })
   idOrganizacao: string;
 
+  @Column({ name: 'idBairro', type: 'varchar', length: 36, nullable: false })
+  idBairro: string;
+
+  @ManyToOne(() => Bairro, {
+    nullable: false,
+    onDelete: 'RESTRICT',
+    eager: true,
+  })
+  @JoinColumn({ name: 'idBairro' })
+  bairro: Bairro;
+
   @ManyToOne(() => Organizacao, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'idOrganizacao' })
   organizacao: Organizacao;
+
+  @Column({
+    name: 'idUtilizadorCriador',
+    type: 'varchar',
+    length: 36,
+    nullable: false,
+  })
+  idUtilizadorCriador: string;
+
+  @ManyToOne(() => Utilizador, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idUtilizadorCriador' })
+  utilizadorCriador: Utilizador;
+
+  @Column({
+    name: 'idUtilizadorSupervisor',
+    type: 'varchar',
+    length: 36,
+    nullable: true,
+  })
+  idUtilizadorSupervisor: string;
+
+  @ManyToOne(() => Utilizador, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idUtilizadorSupervisor' })
+  utilizadorSupervisor: Utilizador;
+
+  @ManyToOne(() => Utilizador, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idUltimaModificacao' })
+  utilizadorEditor: Utilizador;
+
+  @OneToMany(() => CidadaoDeficiencia, (cd) => cd.cidadao)
+  cidadaoDeficiencias: CidadaoDeficiencia[];
+
+  @OneToMany(() => CidadaoCondicaoEspecial, (ce) => ce.cidadao)
+  cidadaoCondicoesEspeciais: CidadaoCondicaoEspecial[];
 
   @Column({
     name: 'nomeCompleto',
@@ -80,33 +126,17 @@ export class Cidadao extends AuditFields {
   @Column({ name: 'telefone', type: 'varchar', length: 20, nullable: true })
   telefone: string | null;
 
-  @Column({ name: 'idBairro', type: 'varchar', length: 36, nullable: false })
-  idBairro: string;
-
-  @ManyToOne(() => Bairro, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'idBairro' })
-  bairro: Bairro;
-
   @Column({ name: 'descricaoEndereco', type: 'text', nullable: false })
   descricaoEndereco: string;
 
   @Column({ name: 'dataInscricao', type: 'date', nullable: false })
   dataInscricao: Date;
 
+  @Column({ name: 'dataSupervisao', type: 'date', nullable: true })
+  dataSupervisao: Date;
+
   @Column({ name: 'observacoes', type: 'text', nullable: true })
   observacoes: string | null;
-
-  @Column({
-    name: 'idUtilizadorCriador',
-    type: 'varchar',
-    length: 36,
-    nullable: false,
-  })
-  idUtilizadorCriador: string;
-
-  @ManyToOne(() => Utilizador, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'idUtilizadorCriador' })
-  utilizadorCriador: Utilizador;
 
   @Column({
     name: 'estado',
@@ -119,9 +149,6 @@ export class Cidadao extends AuditFields {
 
   @Column({ name: 'motivoEliminacao', type: 'text', nullable: true })
   motivoEliminacao: string | null;
-
-  @OneToMany(() => CidadaoDeficiencia, (cd) => cd.cidadao)
-  cidadaoDeficiencias: CidadaoDeficiencia[];
 
   @Column({ name: 'fotoPerfil', type: 'varchar', length: 255, nullable: true })
   fotoPerfil?: string;

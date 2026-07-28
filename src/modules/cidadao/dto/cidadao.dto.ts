@@ -17,6 +17,7 @@ import {
   EstadoCidadao,
   FormatoExportacao,
   CidadaoOrdenacaoColunas,
+  Genero,
 } from '../enums/cidadao.enum';
 import { Transform, Type } from 'class-transformer';
 
@@ -90,6 +91,12 @@ export class CriarCidadaoDto {
   @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
   grausDeficiencias: string[];
 
+  @IsNotEmpty({ message: 'O campo género não pode estar vazio.' })
+  @IsEnum(Genero, {
+    message: 'O género fornecido não é válido.',
+  })
+  genero: Genero;
+
   @IsOptional()
   @IsString()
   observacoes?: string;
@@ -128,7 +135,7 @@ export class EditarCidadaoDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\+244\d{9}$/)
+  @Matches(/^(\+244){0,1}\s{0,1}(\d{3}\s{0,1}){3}$/)
   telefone?: string;
 
   @IsOptional()
