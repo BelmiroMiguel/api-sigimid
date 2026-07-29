@@ -281,8 +281,8 @@ export class DeficienciaService {
         .whereLike('d.descricao', filtro.descricao)
         .whereEqual('d.estado', filtro.estado)
         .withDeleted()
-        .orderBy('d.descricao', 'ASC');
-      console.warn(query.getSqlCompiled());
+        .orderBy('d.descricao', 'ASC')
+        .addOrderBy('gd.descricao', 'ASC');
 
       if (filtro.semPaginacao === true) {
         const items = await query.getMany();

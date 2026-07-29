@@ -84,7 +84,7 @@ export class ProvinciaController {
         pagina: paginado.meta.currentPage,
         totalItens: paginado.meta.totalItems,
         totalPaginas: paginado.meta.totalPages,
-        itensPorPagina: paginado.meta.itemCount,
+        itensPorPagina: paginado.meta.itemsPerPage,
       },
     };
   }

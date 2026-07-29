@@ -3,8 +3,12 @@ import {
   ConflictException,
   NotFoundException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
-import { EntityManagerHelper } from '@2bbelmiro/typeorm-query-buider-helper';
+import {
+  EntityManagerHelper,
+  QueryBuilderHelper,
+} from '@2bbelmiro/typeorm-query-buider-helper';
 import { ClsService } from 'nestjs-cls';
 import { Provincia } from './entities/provincia.entity';
 import { Municipio } from './entities/municipio.entity';
@@ -24,6 +28,8 @@ import { EstadoGeografia } from './enums/geografia.enum';
 
 @Injectable()
 export class GeografiaService {
+  private readonly logger = new Logger(GeografiaService.name);
+
   constructor(
     private readonly entityManagerHelper: EntityManagerHelper,
     private readonly cls: ClsService,
@@ -131,14 +137,51 @@ export class GeografiaService {
   }
 
   async listarProvincias(filtro: FiltroProvinciaDto) {
+    const { estado } = filtro;
     try {
       const query = this.entityManagerHelper
         .createQueryBuilder(Provincia, 'p')
-        .leftJoinAndSelect('p.municipios', 'm')
-        .leftJoinAndSelect('m.bairros', 'b')
-        .whereNull('p.dataEliminacao')
-        .whereLike('p.descricao', filtro.descricao)
-        .whereEqual('p.estado', filtro.estado)
+        .leftJoinAndSelect(
+          'p.municipios',
+          'm',
+          '( m.estado = :estado_ '.concat(
+            'OR ',
+            '((SELECT COUNT(*) FROM tb_bairro b_ ',
+            'WHERE b_.idMunicipio = m.idMunicipio AND ',
+            `b_.estado = :estado_ ) > 0 AND :estado_ = 'INATIVO' )`,
+            ')',
+          ),
+          { estado_: estado },
+        )
+        .leftJoinAndSelect('m.bairros', 'b', (qb) =>
+          qb.equal('b.estado', estado),
+        )
+        .andGroup((qb) => {
+          qb.orGroup((qb) => {
+            qb.orWhereGreaterThan(
+              '(SELECT COUNT(*) FROM tb_municipio m_ '.concat(
+                'WHERE m_.idProvincia = p.idProvincia AND ',
+                `m_.estado = '${estado}' )`,
+              ),
+              0,
+            ).orWhereGreaterThan(
+              '(SELECT COUNT(*) FROM tb_bairro b__ '.concat(
+                'left join tb_municipio m__ on b__.idMunicipio = m__.idMunicipio ',
+                'WHERE m__.idProvincia = p.idProvincia AND ',
+                `b__.estado = '${estado}' )`,
+              ),
+              0,
+            );
+          });
+          qb.orWhereEqual('p.estado', estado);
+        })
+        .whereSearch(
+          ['p.descricao', 'm.descricao', 'b.descricao'],
+          filtro.descricao?.trim(),
+        )
+        .withDeleted()
+        .orderBy('b.descricao', 'ASC')
+        .orderBy('m.descricao', 'ASC')
         .orderBy('p.descricao', 'ASC');
 
       return await query.paginate({
@@ -146,6 +189,8 @@ export class GeografiaService {
         limit: Number(filtro.itensPorPagina) || 10,
       });
     } catch (error) {
+      this.logger.error(error);
+
       throw new InternalServerErrorException(
         'Erro de paginação ao listar províncias.',
       );
@@ -374,6 +419,59 @@ export class GeografiaService {
     } catch (error) {
       throw new InternalServerErrorException(
         'Erro ao processar listagem de bairros.',
+      );
+    }
+  }
+
+  async obterEstatisticas() {
+    try {
+      const provincias = await this.entityManagerHelper
+        .createQueryBuilder(Provincia, 'p')
+        .whereEqual('p.estado', EstadoGeografia.ATIVO)
+        .withDeleted()
+        .getCount();
+
+      const municipios = await this.entityManagerHelper
+        .createQueryBuilder(Municipio, 'm')
+        .whereEqual('m.estado', EstadoGeografia.ATIVO)
+        .withDeleted()
+        .getCount();
+
+      const bairros = await this.entityManagerHelper
+        .createQueryBuilder(Bairro, 'b')
+        .whereEqual('b.estado', EstadoGeografia.ATIVO)
+        .withDeleted()
+        .getCount();
+
+      const provinciasInativas = await this.entityManagerHelper
+        .createQueryBuilder(Provincia, 'p')
+        .whereEqual('p.estado', EstadoGeografia.INATIVO)
+        .withDeleted()
+        .getCount();
+
+      const municipiosInativos = await this.entityManagerHelper
+        .createQueryBuilder(Municipio, 'm')
+        .whereEqual('m.estado', EstadoGeografia.INATIVO)
+        .withDeleted()
+        .getCount();
+
+      const bairrosInativos = await this.entityManagerHelper
+        .createQueryBuilder(Bairro, 'b')
+        .whereEqual('b.estado', EstadoGeografia.INATIVO)
+        .withDeleted()
+        .getCount();
+
+      return {
+        provincias,
+        municipios,
+        bairros,
+        provinciasInativas,
+        municipiosInativos,
+        bairrosInativos,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Erro ao processar as estatísticas do painel de geografias.',
       );
     }
   }

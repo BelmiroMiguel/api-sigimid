@@ -6,7 +6,12 @@ import { MunicipioController } from './municipio.controller';
 import { ProvinciaController } from './provincia.controller';
 
 @Module({
-  controllers: [ProvinciaController, MunicipioController, BairroController],
+  controllers: [
+    GeografiaController,
+    ProvinciaController,
+    MunicipioController,
+    BairroController,
+  ],
   providers: [GeografiaService],
   exports: [GeografiaService],
 })
