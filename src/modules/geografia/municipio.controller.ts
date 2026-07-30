@@ -7,6 +7,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Delete,
 } from '@nestjs/common';
 import { RolesPapelUtilizador } from '../../core/decorators/roles-papel-utilizador.decorator';
 import { IApiResponse } from '../../core/interfaces/api-response.interface';
@@ -32,6 +33,34 @@ export class MunicipioController {
     const municipio = await this.geografiaService.criarMunicipio(dto);
     return {
       message: 'Município registado com sucesso.',
+      body: municipio,
+    };
+  }
+
+  @Delete(':id/eliminar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async eliminar(@Param('id') id: string): Promise<IApiResponse<null>> {
+    await this.geografiaService.eliminarMunicipio(id);
+    return {
+      message: 'Dados do bairro atualizados com sucesso.',
+      body: null,
+    };
+  }
+
+  @Post(':id/restaurar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async restaurar(@Param('id') id: string): Promise<IApiResponse<Municipio>> {
+    const municipio = await this.geografiaService.restaurarMunicipio(id);
+    return {
+      message: 'Dados do município restaurados com sucesso.',
       body: municipio,
     };
   }

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   EntityManagerHelper,
@@ -43,13 +44,12 @@ export class GeografiaService {
     try {
       const provinciaExiste = await this.entityManagerHelper
         .createQueryBuilder(Provincia, 'p')
-        .whereEqual('p.descricao', dto.descricao)
-        .whereNull('p.dataEliminacao')
+        .whereEqual('p.descricao', dto.descricao.trim().toUpperCase())
         .getOne();
 
       if (provinciaExiste) {
         throw new ConflictException(
-          `A província [${dto.descricao}] já se encontra registada.`,
+          `A província [${dto.descricao.trim().toUpperCase()}] já existe.`,
         );
       }
 
@@ -57,7 +57,7 @@ export class GeografiaService {
 
       return await this.entityManagerHelper.transaction(async (manager) => {
         const novaProvincia = manager.create(Provincia, {
-          descricao: dto.descricao,
+          descricao: dto.descricao.trim().toUpperCase(),
           idUltimaModificacao: idUtilizadorLogado,
         });
         return await manager.save(novaProvincia);
@@ -77,17 +77,26 @@ export class GeografiaService {
     try {
       const provincia = await this.buscarProvinciaPorId(id);
 
-      if (dto.descricao && dto.descricao !== provincia.descricao) {
+      if (provincia.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'A província foi eliminada, restaure antes de editar.',
+        );
+      }
+
+      if (
+        dto.descricao &&
+        dto.descricao?.trim().toUpperCase() !==
+          provincia.descricao.trim().toUpperCase()
+      ) {
         const descricaoExiste = await this.entityManagerHelper
           .createQueryBuilder(Provincia, 'p')
-          .whereEqual('p.descricao', dto.descricao)
+          .whereEqual('p.descricao', dto.descricao.trim().toUpperCase())
           .whereNotEqual('p.idProvincia', id)
-          .whereNull('p.dataEliminacao')
           .getOne();
 
         if (descricaoExiste) {
           throw new ConflictException(
-            `A província [${dto.descricao}] já existe.`,
+            `A província [${dto.descricao.trim().toUpperCase()}] já existe.`,
           );
         }
       }
@@ -95,15 +104,16 @@ export class GeografiaService {
       const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
 
       return await this.entityManagerHelper.transaction(async (manager) => {
-        manager.merge(Provincia, provincia, {
-          ...dto,
+        await manager.update(Provincia, provincia.idProvincia, {
+          descricao: dto.descricao?.trim().toUpperCase(),
           idUltimaModificacao: idUtilizadorLogado,
         });
-        return await manager.save(provincia);
+        return await this.buscarProvinciaPorId(id, manager);
       });
     } catch (error) {
       if (
         error instanceof ConflictException ||
+        error instanceof BadRequestException ||
         error instanceof NotFoundException
       )
         throw error;
@@ -113,12 +123,71 @@ export class GeografiaService {
     }
   }
 
-  async buscarProvinciaPorId(id: string): Promise<Provincia> {
+  async eliminarProvincia(id: string): Promise<void> {
     try {
-      const provincia = await this.entityManagerHelper
+      const provincia = await this.buscarProvinciaPorId(id);
+
+      if (provincia.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException('A província já está eliminada.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      await this.entityManagerHelper.transaction(async (manager) => {
+        return await manager.update(Provincia, provincia.idProvincia, {
+          estado: EstadoGeografia.INATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: new Date(),
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao eliminar província.');
+    }
+  }
+
+  async restaurarProvincia(id: string): Promise<Provincia> {
+    try {
+      const provincia = await this.buscarProvinciaPorId(id);
+
+      if (provincia.estado == EstadoGeografia.ATIVO) {
+        throw new BadRequestException('A província já está ativa.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      return await this.entityManagerHelper.transaction(async (manager) => {
+        await manager.update(Provincia, provincia.idProvincia, {
+          estado: EstadoGeografia.ATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: () => 'NULL',
+        });
+        return await this.buscarProvinciaPorId(id, manager);
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao restaurar província.');
+    }
+  }
+
+  async buscarProvinciaPorId(
+    id: string,
+    manager?: EntityManagerHelper,
+  ): Promise<Provincia> {
+    try {
+      const provincia = await (manager ?? this.entityManagerHelper)
         .createQueryBuilder(Provincia, 'p')
         .whereEqual('p.idProvincia', id)
-        .whereNull('p.dataEliminacao')
         .getOne();
 
       if (!provincia) {
@@ -148,7 +217,7 @@ export class GeografiaService {
             'OR ',
             '((SELECT COUNT(*) FROM tb_bairro b_ ',
             'WHERE b_.idMunicipio = m.idMunicipio AND ',
-            `b_.estado = :estado_ ) > 0 AND :estado_ = 'INATIVO' )`,
+            `b_.estado = :estado_ AND :estado_ = 'INATIVO') > 0 )`,
             ')',
           ),
           { estado_: estado },
@@ -161,14 +230,14 @@ export class GeografiaService {
             qb.orWhereGreaterThan(
               '(SELECT COUNT(*) FROM tb_municipio m_ '.concat(
                 'WHERE m_.idProvincia = p.idProvincia AND ',
-                `m_.estado = '${estado}' )`,
+                `m_.estado = '${estado}' AND '${estado}' = 'INATIVO')`,
               ),
               0,
             ).orWhereGreaterThan(
               '(SELECT COUNT(*) FROM tb_bairro b__ '.concat(
                 'left join tb_municipio m__ on b__.idMunicipio = m__.idMunicipio ',
                 'WHERE m__.idProvincia = p.idProvincia AND ',
-                `b__.estado = '${estado}' )`,
+                `b__.estado = '${estado}' AND '${estado}' = 'INATIVO' )`,
               ),
               0,
             );
@@ -203,18 +272,24 @@ export class GeografiaService {
 
   async criarMunicipio(dto: CriarMunicipioDto): Promise<Municipio> {
     try {
-      await this.buscarProvinciaPorId(dto.idProvincia);
+      const provincia = await this.buscarProvinciaPorId(dto.idProvincia);
 
       const municipioExiste = await this.entityManagerHelper
         .createQueryBuilder(Municipio, 'm')
-        .whereEqual('m.descricao', dto.descricao)
+        .innerJoinAndSelect('m.provincia', 'p')
+        .whereEqual('m.descricao', dto.descricao.trim().toUpperCase())
         .whereEqual('m.idProvincia', dto.idProvincia)
-        .whereNull('m.dataEliminacao')
         .getOne();
 
       if (municipioExiste) {
         throw new ConflictException(
-          `O município [${dto.descricao}] já existe nesta província.`,
+          `O município [${dto.descricao.trim().toUpperCase()}] já existe na província de ${municipioExiste.provincia?.descricao}.`,
+        );
+      }
+
+      if (provincia.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'A província foi eliminada, restaure antes de adicionar novos municípios.',
         );
       }
 
@@ -223,7 +298,7 @@ export class GeografiaService {
       return await this.entityManagerHelper.transaction(async (manager) => {
         const novoMunicipio = manager.create(Municipio, {
           idProvincia: dto.idProvincia,
-          descricao: dto.descricao,
+          descricao: dto.descricao.trim().toUpperCase(),
           idUltimaModificacao: idUtilizadorLogado,
         });
         return await manager.save(novoMunicipio);
@@ -231,6 +306,7 @@ export class GeografiaService {
     } catch (error) {
       if (
         error instanceof ConflictException ||
+        error instanceof BadRequestException ||
         error instanceof NotFoundException
       )
         throw error;
@@ -241,40 +317,125 @@ export class GeografiaService {
   }
 
   async editarMunicipio(
-    id: string,
+    idMunicipio: string,
     dto: EditarMunicipioDto,
   ): Promise<Municipio> {
     try {
-      const municipio = await this.buscarMunicipioPorId(id);
+      const municipio = await this.buscarMunicipioPorId(idMunicipio);
 
-      if (dto.idProvincia) {
-        await this.buscarProvinciaPorId(dto.idProvincia);
+      if (municipio.provincia?.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'A província foi eliminada, restaure para editar os municípios.',
+        );
+      }
+
+      if (municipio.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'O município foi eliminado, restaure antes de editar.',
+        );
+      }
+
+      const municipioExiste = await this.entityManagerHelper
+        .createQueryBuilder(Municipio, 'm')
+        .innerJoinAndSelect('m.provincia', 'p')
+        .whereEqual('m.descricao', dto.descricao?.trim().toUpperCase())
+        .whereEqual('m.idProvincia', dto.idProvincia)
+        .whereNotEqual('m.idMunicipio', idMunicipio)
+        .getOne();
+
+      if (municipioExiste) {
+        throw new ConflictException(
+          `O município [${dto.descricao?.trim().toUpperCase()}] já existe na província de ${municipioExiste.provincia?.descricao}.`,
+        );
       }
 
       const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
 
       return await this.entityManagerHelper.transaction(async (manager) => {
-        manager.merge(Municipio, municipio, {
-          ...dto,
+        await manager.update(Municipio, idMunicipio, {
+          descricao: dto.descricao?.trim().toUpperCase(),
           idUltimaModificacao: idUtilizadorLogado,
         });
-        return await manager.save(municipio);
+        return await this.buscarMunicipioPorId(idMunicipio, manager);
       });
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
       throw new InternalServerErrorException(
         'Erro ao atualizar os dados do município.',
       );
     }
   }
 
-  async buscarMunicipioPorId(id: string): Promise<Municipio> {
+  async eliminarMunicipio(id: string): Promise<void> {
     try {
-      const municipio = await this.entityManagerHelper
+      const municipio = await this.buscarMunicipioPorId(id);
+
+      if (municipio.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException('O município já está eliminado.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      await this.entityManagerHelper.transaction(async (manager) => {
+        return await manager.update(Municipio, municipio.idMunicipio, {
+          estado: EstadoGeografia.INATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: new Date(),
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao eliminar município.');
+    }
+  }
+
+  async restaurarMunicipio(id: string): Promise<Municipio> {
+    try {
+      const municipio = await this.buscarMunicipioPorId(id);
+
+      if (municipio.estado == EstadoGeografia.ATIVO) {
+        throw new BadRequestException('O município já está ativo.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      return await this.entityManagerHelper.transaction(async (manager) => {
+        await manager.update(Municipio, municipio.idMunicipio, {
+          estado: EstadoGeografia.ATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: () => 'NULL',
+        });
+        return await this.buscarMunicipioPorId(id, manager);
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao restaurar município.');
+    }
+  }
+
+  async buscarMunicipioPorId(
+    id: string,
+    manager?: EntityManagerHelper,
+  ): Promise<Municipio> {
+    try {
+      const municipio = await (manager ?? this.entityManagerHelper)
         .createQueryBuilder(Municipio, 'm')
         .leftJoinAndSelect('m.provincia', 'p')
         .whereEqual('m.idMunicipio', id)
-        .whereNull('m.dataEliminacao')
         .getOne();
 
       if (!municipio) {
@@ -297,7 +458,6 @@ export class GeografiaService {
       const query = this.entityManagerHelper
         .createQueryBuilder(Municipio, 'm')
         .leftJoinAndSelect('m.provincia', 'p')
-        .whereNull('m.dataEliminacao')
         .whereEqual('m.idProvincia', filtro.idProvincia)
         .whereLike('m.descricao', filtro.descricao)
         .whereEqual('m.estado', filtro.estado)
@@ -318,18 +478,29 @@ export class GeografiaService {
 
   async criarBairro(dto: CriarBairroDto): Promise<Bairro> {
     try {
-      await this.buscarMunicipioPorId(dto.idMunicipio);
+      const municipio = await this.buscarMunicipioPorId(dto.idMunicipio);
+
+      if (municipio.provincia?.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'A província foi eliminada, restaure para adicionar novos bairros.',
+        );
+      }
+
+      if (municipio.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'O município foi eliminado, restaure antes adicionar novos bairros.',
+        );
+      }
 
       const bairroExiste = await this.entityManagerHelper
         .createQueryBuilder(Bairro, 'b')
         .whereEqual('b.descricao', dto.descricao)
         .whereEqual('b.idMunicipio', dto.idMunicipio)
-        .whereNull('b.dataEliminacao')
         .getOne();
 
       if (bairroExiste) {
         throw new ConflictException(
-          `O bairro [${dto.descricao}] já se encontra mapeado para este município.`,
+          `O bairro [${dto.descricao}] já existe neste município.`,
         );
       }
 
@@ -346,6 +517,7 @@ export class GeografiaService {
     } catch (error) {
       if (
         error instanceof ConflictException ||
+        error instanceof BadRequestException ||
         error instanceof NotFoundException
       )
         throw error;
@@ -357,8 +529,35 @@ export class GeografiaService {
     try {
       const bairro = await this.buscarBairroPorId(id);
 
-      if (dto.idMunicipio) {
-        await this.buscarMunicipioPorId(dto.idMunicipio);
+      if (bairro.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'O bairro foi eliminado, restaure antes de editar.',
+        );
+      }
+
+      if (bairro.municipio?.provincia?.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'A província foi eliminada, restaure para edita os bairros.',
+        );
+      }
+
+      if (bairro.municipio?.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException(
+          'O município foi eliminado, restaure antes para editar os bairros.',
+        );
+      }
+
+      const bairroExiste = await this.entityManagerHelper
+        .createQueryBuilder(Bairro, 'b')
+        .whereEqual('b.descricao', dto.descricao)
+        .whereEqual('b.idMunicipio', dto.idMunicipio)
+        .whereNotEqual('b.idBairro', id)
+        .getOne();
+
+      if (bairroExiste) {
+        throw new ConflictException(
+          `O bairro [${dto.descricao}] já existe neste município.`,
+        );
       }
 
       const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
@@ -371,18 +570,81 @@ export class GeografiaService {
         return await manager.save(bairro);
       });
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
       throw new InternalServerErrorException('Erro ao editar dados do bairro.');
     }
   }
 
-  async buscarBairroPorId(id: string): Promise<Bairro> {
+  async eliminarBairro(id: string): Promise<void> {
     try {
-      const bairro = await this.entityManagerHelper
+      const bairro = await this.buscarBairroPorId(id);
+
+      if (bairro.estado == EstadoGeografia.INATIVO) {
+        throw new BadRequestException('O bairo já está eliminado.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      await this.entityManagerHelper.transaction(async (manager) => {
+        await manager.update(Bairro, bairro.idBairro, {
+          estado: EstadoGeografia.INATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: new Date(),
+        });
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao eliminar bairro.');
+    }
+  }
+
+  async restaurarBairro(id: string): Promise<Bairro> {
+    try {
+      const bairro = await this.buscarBairroPorId(id);
+
+      if (bairro.estado == EstadoGeografia.ATIVO) {
+        throw new BadRequestException('O bairo já está ativo.');
+      }
+
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      return await this.entityManagerHelper.transaction(async (manager) => {
+        await manager.update(Bairro, bairro.idBairro, {
+          estado: EstadoGeografia.ATIVO,
+          idUltimaModificacao: idUtilizadorLogado,
+          dataEliminacao: () => 'NULL',
+        });
+        return await this.buscarBairroPorId(id, manager);
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException('Erro ao restaurar bairro.');
+    }
+  }
+
+  async buscarBairroPorId(
+    id: string,
+    manager?: EntityManagerHelper,
+  ): Promise<Bairro> {
+    try {
+      const bairro = await (manager ?? this.entityManagerHelper)
         .createQueryBuilder(Bairro, 'b')
         .leftJoinAndSelect('b.municipio', 'm')
         .whereEqual('b.idBairro', id)
-        .whereNull('b.dataEliminacao')
         .getOne();
 
       if (!bairro) {
@@ -406,7 +668,6 @@ export class GeografiaService {
         .createQueryBuilder(Bairro, 'b')
         .leftJoinAndSelect('b.municipio', 'm')
         .leftJoinAndSelect('m.provincia', 'p')
-        .whereNull('b.dataEliminacao')
         .whereEqual('b.idMunicipio', filtro.idMunicipio)
         .whereLike('b.descricao', filtro.descricao)
         .whereEqual('b.estado', filtro.estado)

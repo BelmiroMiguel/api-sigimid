@@ -12,7 +12,7 @@ export abstract class AuditFields {
   @UpdateDateColumn({ name: 'dataAtualizacao', type: 'timestamp' })
   dataAtualizacao: Date;
 
-  @DeleteDateColumn({
+  @Column({
     name: 'dataEliminacao',
     type: 'timestamp',
     nullable: true,

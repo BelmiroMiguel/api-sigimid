@@ -7,6 +7,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Delete,
 } from '@nestjs/common';
 import { RolesPapelUtilizador } from '../../core/decorators/roles-papel-utilizador.decorator';
 import { IApiResponse } from '../../core/interfaces/api-response.interface';
@@ -24,7 +25,10 @@ export class ProvinciaController {
   constructor(private readonly geografiaService: GeografiaService) {}
 
   @Post()
-  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
   @HttpCode(HttpStatus.CREATED)
   async criar(
     @Body() dto: CriarProvinciaDto,
@@ -36,8 +40,39 @@ export class ProvinciaController {
     };
   }
 
+  @Delete(':id/eliminar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async eliminar(@Param('id') id: string): Promise<IApiResponse<null>> {
+    await this.geografiaService.eliminarProvincia(id);
+    return {
+      message: 'Eliminação da província realisado com sucesso.',
+      body: null,
+    };
+  }
+
+  @Post(':id/restaurar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async restaurar(@Param('id') id: string): Promise<IApiResponse<Provincia>> {
+    const provincia = await this.geografiaService.restaurarProvincia(id);
+    return {
+      message: 'Dados da província restaurados com sucesso.',
+      body: provincia,
+    };
+  }
+
   @Post(':id/editar')
-  @RolesPapelUtilizador(PapelUtilizador.ADMINISTRADOR)
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
   @HttpCode(HttpStatus.OK)
   async editar(
     @Param('id') id: string,

@@ -6,6 +6,8 @@ import {
   IsUUID,
   IsInt,
   Min,
+  MaxLength,
+  MinLength,
 } from 'class-validator';
 import { EstadoGeografia } from '../enums/geografia.enum';
 
@@ -13,12 +15,16 @@ import { EstadoGeografia } from '../enums/geografia.enum';
 export class CriarProvinciaDto {
   @IsNotEmpty({ message: 'A descrição da província é obrigatória.' })
   @IsString({ message: 'A descrição deve ser uma cadeia de caracteres.' })
+  @MaxLength(25)
+  @MinLength(3)
   descricao: string;
 }
 
 export class EditarProvinciaDto {
   @IsOptional()
   @IsString()
+  @MaxLength(25)
+  @MinLength(3)
   descricao?: string;
 
   @IsOptional()
@@ -56,6 +62,8 @@ export class CriarMunicipioDto {
 
   @IsNotEmpty({ message: 'A descrição do município é obrigatória.' })
   @IsString({ message: 'A descrição deve ser uma cadeia de caracteres.' })
+  @MaxLength(25)
+  @MinLength(3)
   descricao: string;
 }
 
@@ -66,6 +74,8 @@ export class EditarMunicipioDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(25)
+  @MinLength(3)
   descricao?: string;
 
   @IsOptional()
@@ -107,6 +117,8 @@ export class CriarBairroDto {
 
   @IsNotEmpty({ message: 'A descrição do bairro é obrigatória.' })
   @IsString({ message: 'A descrição deve ser uma cadeia de caracteres.' })
+  @MaxLength(25)
+  @MinLength(3)
   descricao: string;
 }
 
@@ -117,6 +129,8 @@ export class EditarBairroDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(25)
+  @MinLength(3)
   descricao?: string;
 
   @IsOptional()

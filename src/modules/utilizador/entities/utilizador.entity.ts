@@ -40,6 +40,9 @@ export class Utilizador extends AuditFields {
   @Column({ name: 'email', type: 'varchar', length: 100, nullable: false })
   email: string;
 
+  @Column({ name: 'telefone', type: 'varchar', length: 20, nullable: false })
+  telefone: string;
+
   @Column({ name: 'senhaHash', type: 'varchar', length: 255, nullable: false })
   senhaHash: string;
 
