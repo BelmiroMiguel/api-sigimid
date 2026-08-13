@@ -9,9 +9,10 @@ import { Cidadao } from './cidadao.entity';
 import { Deficiencia } from '../../deficiencia/entities/deficiencia.entity';
 import { Organizacao } from '../../organizacao/entities/organizacao.entity';
 import { GrauDeficiencia } from '../../deficiencia/entities/grau-deficiencia.entity';
+import { AuditFields } from '../../../core/database/audit-fields.abstract';
 
 @Entity({ name: 'tb_cidadao_deficiencia' })
-export class CidadaoDeficiencia {
+export class CidadaoDeficiencia extends AuditFields  {
   @PrimaryGeneratedColumn('uuid', { name: 'idCidadaoDeficiencia' })
   idCidadaoDeficiencia: string;
 

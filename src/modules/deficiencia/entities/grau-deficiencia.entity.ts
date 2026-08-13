@@ -5,10 +5,13 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  ManyToMany,
+  OneToMany,
 } from 'typeorm';
 import { AuditFields } from '../../../core/database/audit-fields.abstract';
 import { Deficiencia } from './deficiencia.entity';
 import { EstadoDeficiencia } from '../enums/deficiencia.enum';
+import { CidadaoDeficiencia } from '../../cidadao/entities/cidadao-deficiencia.entity';
 
 @Entity({ name: 'tb_grau_deficiencia' })
 @Index('idx_grau_deficiencia_descricao', ['descricao', 'dataEliminacao'], {
@@ -31,6 +34,11 @@ export class GrauDeficiencia extends AuditFields {
   })
   @JoinColumn({ name: 'idDeficiencia' })
   deficiencia: Deficiencia;
+
+  @OneToMany(() => CidadaoDeficiencia, (cd) => cd.grauDeficiencia, {
+    nullable: true,
+  })
+  cidadaoDeficiencia: CidadaoDeficiencia[];
 
   @Column({ name: 'descricao', type: 'varchar', length: 100, nullable: false })
   descricao: string;

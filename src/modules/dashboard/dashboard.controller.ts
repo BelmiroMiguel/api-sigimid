@@ -9,6 +9,24 @@ import { IApiResponse } from '../../core/interfaces/api-response.interface';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @Get('estatistica')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async estatistica(
+    @Query() filtro: FiltroDashboardDto,
+  ): Promise<IApiResponse<Record<string, unknown>>> {
+    const metricasConsolidadas =
+      await this.dashboardService.obterEstatistica(filtro);
+    return {
+      message:
+        'Métricas analíticas consolidadas compiladas com sucesso para o período solicitado.',
+      body: metricasConsolidadas,
+    };
+  }
+
   @Get('metricas')
   @RolesPapelUtilizador(
     PapelUtilizador.ADMINISTRADOR,

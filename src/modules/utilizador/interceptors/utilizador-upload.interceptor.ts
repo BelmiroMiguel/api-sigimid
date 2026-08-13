@@ -8,6 +8,7 @@ import {
 import { Observable, from } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { UploadService } from '../../../core/upload/upload.service';
+export const pathFotoPerfilUtilizador = 'utilizadores/perfil';
 
 @Injectable()
 export class UtilizadorUploadInterceptor implements NestInterceptor {
@@ -23,10 +24,11 @@ export class UtilizadorUploadInterceptor implements NestInterceptor {
 
     // Processa o upload físico antes do request atingir o Controller
     return from(
-      this.uploadService.guardarFicheiro(file, 'utilizadores/perfil'),
+      this.uploadService.guardarFicheiro(file, pathFotoPerfilUtilizador),
     ).pipe(
       switchMap((res) => {
         // Injeta o caminho físico diretamente no corpo do request
+
         request.body.fotoPerfil = res.nomeFicheiro;
 
         // Regista o ficheiro na lista de limpezas automáticas para prevenção de falhas

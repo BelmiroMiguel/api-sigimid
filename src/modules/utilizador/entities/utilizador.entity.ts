@@ -30,6 +30,22 @@ export class Utilizador extends AuditFields {
   organizacao: Organizacao;
 
   @Column({
+    name: 'idUtilizadorCriador',
+    type: 'varchar',
+    length: 36,
+    nullable: true,
+  })
+  idUtilizadorCriador: string;
+
+  @ManyToOne(() => Utilizador, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idUtilizadorCriador' })
+  utilizadorCriador: Utilizador;
+
+  @ManyToOne(() => Utilizador, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'idUltimaModificacao' })
+  utilizadorEditor: Utilizador;
+
+  @Column({
     name: 'nomeCompleto',
     type: 'varchar',
     length: 150,
@@ -72,6 +88,6 @@ export class Utilizador extends AuditFields {
   @AfterLoad()
   private afterLoad() {
     this.fotoPerfilBase = this.fotoPerfil;
-    this.fotoPerfil = `${process.env.BASE_URL}/img/${this.fotoPerfil}`;
+    this.fotoPerfil = `${process.env.BASE_URL}/utilizadores/img/perfil/${this.fotoPerfil}`;
   }
 }

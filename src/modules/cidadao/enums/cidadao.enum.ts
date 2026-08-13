@@ -23,7 +23,7 @@ export enum FormatoExportacao {
   PDF = 'PDF',
 }
 
-export enum GrauDeficiencia {
+export enum _GrauDeficiencia {
   LEVE = 'LEVE',
   MODERADO = 'MODERADO',
   GRAVE = 'GRAVE',

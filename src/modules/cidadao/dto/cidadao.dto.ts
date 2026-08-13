@@ -83,13 +83,20 @@ export class CriarCidadaoDto {
   @IsDateString()
   dataInscricao: string;
 
-  @IsOptional()
   @IsNotEmpty({ message: 'Associe pelo menos uma tipologia de deficiência.' })
   @IsArray({
     message: 'As deficiências devem ser fornecidas como uma lista de IDs.',
   })
   @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
   grausDeficiencias: string[];
+
+  @IsOptional()
+  @IsArray({
+    message:
+      'As condicoes especiais devem ser fornecidas como uma lista de IDs.',
+  })
+  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
+  condicoesEspeciais: string[];
 
   @IsNotEmpty({ message: 'O campo género não pode estar vazio.' })
   @IsEnum(Genero, {
@@ -116,6 +123,12 @@ export class EditarCidadaoDto {
   @IsString()
   @Matches(/^[a-zA-ZÀ-ÿ\s]+$/)
   nomeCompleto?: string;
+
+  @IsOptional()
+  @IsEnum(Genero, {
+    message: 'O género fornecido não é válido.',
+  })
+  genero: Genero;
 
   @IsOptional()
   @IsEnum(TipoIdentificacaoCidadao)
@@ -147,10 +160,19 @@ export class EditarCidadaoDto {
   descricaoEndereco?: string;
 
   @IsOptional()
-  @IsArray()
+  @IsArray({
+    message: 'As deficiências devem ser fornecidas como uma lista de IDs.',
+  })
   @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
-  //@IsUUID('4', { each: true })
-  idGrausDeficiencias?: string[];
+  grausDeficiencias: string[];
+
+  @IsOptional()
+  @IsArray({
+    message:
+      'As condicoes especiais devem ser fornecidas como uma lista de IDs.',
+  })
+  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
+  condicoesEspeciais: string[];
 
   @IsOptional()
   @IsString()
@@ -173,6 +195,11 @@ export class EditarCidadaoDto {
   @IsArray()
   @IsString({ each: true })
   fotosCorpoCompletoManter?: string[]; // Nomes de ficheiros antigos a manter na galeria (enviado pelo Front-end)
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fotosCorpoCompletoBaseRemover?: string[]; // Nomes de ficheiros antigos a remover na galeria (enviado pelo Front-end)
 }
 
 export class FiltroCidadaoDto {
@@ -287,20 +314,22 @@ export class FiltroCidadaoDto {
   dataFimCadastro?: string;
 
   @IsOptional()
-  @IsObject({
-    message: 'A propriedade de ordenação deve ser um objeto válido.',
+  @IsEnum(CidadaoOrdenacaoColunas)
+  sort?: CidadaoOrdenacaoColunas;
+
+  @IsOptional()
+  @IsString()
+  dir?: 'ASC' | 'DESC' = 'ASC';
+
+  @IsOptional()
+  @IsString({
+    message: 'A propriedade de ordenação inválida.',
   })
   @Transform(({ value }) => {
     // Caso chegue como string JSON do front-end, faz o parse preventivo
-    if (typeof value === 'string' && value.trim()) {
-      try {
-        value = JSON.parse(value);
-      } catch {
-        return undefined;
-      }
+    if (typeof value !== 'string' || !value || !value.trim()) {
+      return undefined;
     }
-
-    if (typeof value !== 'object' || value === null) return undefined;
 
     const objetoSanitizado: Record<string, 'ASC' | 'DESC'> = {};
     const colunasValidas = Object.values(CidadaoOrdenacaoColunas) as string[];
@@ -320,7 +349,7 @@ export class FiltroCidadaoDto {
       ? objetoSanitizado
       : undefined;
   })
-  ordenacao?: Record<CidadaoOrdenacaoColunas, 'ASC' | 'DESC'>;
+  ordenacao?: Record<string, 'ASC' | 'DESC'>;
 }
 
 export class ExportarCidadaoDto {

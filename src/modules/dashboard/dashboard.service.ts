@@ -1,6 +1,7 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EntityManagerHelper } from '@2bbelmiro/typeorm-query-buider-helper';
@@ -14,14 +15,302 @@ import { Utilizador } from '../utilizador/entities/utilizador.entity';
 import { FiltroDashboardDto } from './dto/dashboard.dto';
 import { EstadoCidadao, AcaoAuditoria } from '../cidadao/enums/cidadao.enum';
 import { PapelUtilizador } from '../utilizador/enums/utilizador.enum';
-import { GrauDeficiencia } from '../cidadao/enums/cidadao.enum';
+import { Deficiencia } from '../deficiencia/entities/deficiencia.entity';
+import { GrauDeficiencia } from '../deficiencia/entities/grau-deficiencia.entity';
+import { EntityManager } from 'typeorm';
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
+
   constructor(
     private readonly entityManagerHelper: EntityManagerHelper,
+    private readonly manager: EntityManager,
     private readonly cls: ClsService,
   ) {}
+
+  async obterEstatistica(dto: FiltroDashboardDto) {
+    try {
+      // 1. Inicia a construção da Query Base
+      const queryDeficiencias = this.entityManagerHelper
+        .createQueryBuilder(CidadaoDeficiencia, 'cd')
+        .innerJoin('cd.grauDeficiencia', 'gd')
+        .innerJoin('gd.deficiencia', 'd')
+        .innerJoin('cd.cidadao', 'c', (q) =>
+          q.equal('c.estado', EstadoCidadao.ATIVO),
+        )
+        .build()
+        .select([
+          'd.descricao AS deficiencia',
+          'COUNT(DISTINCT cd.idCidadao) AS total',
+        ])
+        .groupBy('d.idDeficiencia')
+        .addGroupBy('d.descricao')
+        .limit(9);
+
+      // 2. Aplica o filtro de Ano (se fornecido no DTO)
+      if (dto.ano) {
+        // YEAR() extrai o ano da data de criação no MySQL
+        queryDeficiencias.andWhere('YEAR(c.dataCriacao) = :ano', {
+          ano: dto.ano,
+        });
+      }
+
+      // 3. Aplica o filtro de Bairros (se houver IDs no array)
+      if (dto.idBairroIn && dto.idBairroIn.length > 0) {
+        // Supõe-se que a tabela do cidadão ou da deficiência possua o vínculo idBairro
+        queryDeficiencias.andWhere('c.idBairro IN (:...idBairros)', {
+          idBairros: dto.idBairroIn,
+        });
+      }
+
+      // 4. Executa a query final no banco de dados
+      const deficiencias = await queryDeficiencias.getRawMany();
+
+      const porpocaoEmQuantidade = await this.volumePorQuantidade(dto);
+      const evolucaoCidadaos = await this.evolucaoMensal(dto);
+      const grausPorDeficiencia =
+        await this.distribuicaoGrausPorDeficiencia(dto);
+
+      return {
+        deficiencias,
+        porpocaoEmQuantidade,
+        evolucaoCidadaos,
+        grausPorDeficiencia,
+      };
+    } catch (error: any) {
+      this.logger.error(error.message);
+      throw new InternalServerErrorException(
+        'Ocorreu uma falha interna ao tentar compilar e agregar as métricas do painel analítico. ' +
+          error.message,
+      );
+    }
+  }
+  private async evolucaoMensal(dto: FiltroDashboardDto) {
+    // Define o ano base usando o DTO ou o ano atual do sistema
+    const anoFiltro = dto.ano || new Date().getFullYear();
+
+    // 1. Evolução de novos Cidadãos por mês
+    const queryCidadaos = this.entityManagerHelper
+      .createQueryBuilder(Cidadao, 'c')
+      .build()
+      .select("DATE_FORMAT(c.dataCriacao, '%Y-%m')", 'mes')
+      .addSelect('COUNT(c.idCidadao)', 'novosCidadaos')
+      .where('c.estado = :estado', { estado: EstadoCidadao.ATIVO })
+      .andWhere('YEAR(c.dataCriacao) = :anoFiltro', { anoFiltro }) // Filtro de Ano
+      .groupBy("DATE_FORMAT(c.dataCriacao, '%Y-%m')")
+      .orderBy("DATE_FORMAT(c.dataCriacao, '%Y-%m')", 'ASC');
+
+    if (dto.idBairroIn && dto.idBairroIn.length > 0) {
+      queryCidadaos.andWhere('c.idBairro IN (:...idBairros)', {
+        idBairros: dto.idBairroIn,
+      });
+    }
+
+    const evolucaoCidadaos = await queryCidadaos.getRawMany();
+
+    // 2. Evolução de novas Deficiências registadas por mês
+    const queryDeficiencias = this.entityManagerHelper
+      .createQueryBuilder(CidadaoDeficiencia, 'cd')
+      .innerJoin('cd.cidadao', 'c', (q) =>
+        q.equal('c.estado', EstadoCidadao.ATIVO),
+      )
+      .build()
+      .select("DATE_FORMAT(cd.dataCriacao, '%Y-%m')", 'mes')
+      .addSelect('COUNT(cd.idCidadaoDeficiencia)', 'novasDeficiencias')
+      .where('YEAR(cd.dataCriacao) = :anoFiltro', { anoFiltro }) // Filtro de Ano
+      .groupBy("DATE_FORMAT(cd.dataCriacao, '%Y-%m')")
+      .orderBy("DATE_FORMAT(cd.dataCriacao, '%Y-%m')", 'ASC');
+
+    if (dto.idBairroIn && dto.idBairroIn.length > 0) {
+      queryDeficiencias.andWhere('c.idBairro IN (:...idBairros)', {
+        idBairros: dto.idBairroIn,
+      });
+    }
+
+    const evolucaoDeficiencias = await queryDeficiencias.getRawMany();
+
+    const mesesExtensoMin = [
+      'Jan',
+      'Fev',
+      'Mar',
+      'Abr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Set',
+      'Out',
+      'Nov',
+      'Dez',
+    ];
+    const mesesExtenso = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
+
+    const mapaEvolucao = new Map<string, any>();
+
+    let mesCorrente = 1;
+
+    // --- CORREÇÃO AQUI: Usa o anoFiltro do DTO dinamicamente para o esqueleto ---
+    while (mesCorrente <= 12) {
+      const stringMes = `${anoFiltro}-${String(mesCorrente).padStart(2, '0')}`;
+      const nomeMes = mesesExtenso[mesCorrente - 1];
+      const nomeMesMin = mesesExtensoMin[mesCorrente - 1];
+
+      mapaEvolucao.set(stringMes, {
+        mes: stringMes,
+        mesNum: mesCorrente,
+        nomeMes,
+        nomeMesMin,
+        novosCidadaos: 0,
+        novasDeficiencias: 0,
+      });
+
+      mesCorrente++;
+    }
+
+    for (const item of evolucaoCidadaos) {
+      if (mapaEvolucao.has(item.mes)) {
+        mapaEvolucao.get(item.mes).novosCidadaos = parseInt(
+          item.novosCidadaos,
+          10,
+        );
+      }
+    }
+
+    for (const item of evolucaoDeficiencias) {
+      if (mapaEvolucao.has(item.mes)) {
+        mapaEvolucao.get(item.mes).novasDeficiencias = parseInt(
+          item.novasDeficiencias,
+          10,
+        );
+      }
+    }
+
+    return Array.from(mapaEvolucao.values()).sort((a, b) =>
+      a.mes.localeCompare(b.mes),
+    );
+  }
+
+  private async volumePorQuantidade(dto: FiltroDashboardDto) {
+    const subQueryBuilder = this.entityManagerHelper
+      .createQueryBuilder(CidadaoDeficiencia, 'cd')
+      .innerJoin('cd.grauDeficiencia', 'grau')
+      .innerJoin('cd.cidadao', 'c', (q) =>
+        q.equal('c.estado', EstadoCidadao.ATIVO),
+      )
+      .build()
+      .select('cd.idCidadao', 'idCidadao')
+      .addSelect('COUNT(DISTINCT grau.idDeficiencia)', 'totalDeficiencias')
+      .groupBy('c.idCidadao');
+
+    // Filtros injetados de forma estrita dentro da subquery
+    if (dto.ano) {
+      subQueryBuilder.andWhere('YEAR(c.dataCriacao) = :ano', { ano: dto.ano });
+    }
+
+    if (dto.idBairroIn && dto.idBairroIn.length > 0) {
+      subQueryBuilder.andWhere('c.idBairro IN (:...idBairros)', {
+        idBairros: dto.idBairroIn,
+      });
+    }
+
+    const indiceMultideficiencia = await this.manager
+      .createQueryBuilder()
+      .select(
+        `CASE 
+            WHEN sub.totalDeficiencias = 1 THEN '1 Deficiência'
+            WHEN sub.totalDeficiencias = 2 THEN '2 Deficiências'
+            ELSE '3 ou mais Deficiências'
+          END`,
+        'categoria',
+      )
+      .addSelect('COUNT(*)', 'totalCidadaos')
+      .from(`(${subQueryBuilder.getQuery()})`, 'sub')
+      .setParameters(subQueryBuilder.getParameters())
+      .groupBy('categoria')
+      .getRawMany();
+
+    return indiceMultideficiencia.map((item) => ({
+      categoria: item.categoria,
+      totalCidadaos: parseInt(item.totalCidadaos, 10),
+    }));
+  }
+
+  private async distribuicaoGrausPorDeficiencia(dto: FiltroDashboardDto) {
+    const queryGraus = this.entityManagerHelper
+      .createQueryBuilder(CidadaoDeficiencia, 'cd')
+      .innerJoin('cd.grauDeficiencia', 'grau')
+      .innerJoin('grau.deficiencia', 'deficiencia')
+      .innerJoin('cd.cidadao', 'c', (q) =>
+        q.equal('c.estado', EstadoCidadao.ATIVO),
+      )
+      .build()
+      .select([
+        'deficiencia.idDeficiencia AS idDeficiencia',
+        'deficiencia.descricao AS deficiencia',
+        'grau.idGrauDeficiencia AS idGrauDeficiencia',
+        'grau.descricao AS grau',
+        'COUNT(DISTINCT cd.idCidadao) AS total',
+      ])
+      .groupBy('deficiencia.idDeficiencia')
+      .addGroupBy('deficiencia.descricao')
+      .addGroupBy('grau.idGrauDeficiencia')
+      .addGroupBy('grau.descricao')
+      .orderBy('deficiencia.descricao', 'ASC')
+      .addOrderBy('COUNT(DISTINCT cd.idCidadao)', 'DESC');
+
+    // Filtros aplicados na query principal
+    if (dto.ano) {
+      queryGraus.andWhere('YEAR(c.dataCriacao) = :ano', { ano: dto.ano });
+    }
+
+    if (dto.idBairroIn && dto.idBairroIn.length > 0) {
+      queryGraus.andWhere('c.idBairro IN (:...idBairros)', {
+        idBairros: dto.idBairroIn,
+      });
+    }
+
+    const distribuicaoGraus = await queryGraus.getRawMany();
+
+    const mapaDeficiencias = new Map<string, any>();
+
+    for (const item of distribuicaoGraus) {
+      if (!mapaDeficiencias.has(item.idDeficiencia)) {
+        mapaDeficiencias.set(item.idDeficiencia, {
+          idDeficiencia: item.idDeficiencia,
+          deficiencia: item.deficiencia,
+          totalGeralCidadaos: 0,
+          graus: [],
+        });
+      }
+
+      const totalItem = parseInt(item.total, 10);
+      const deficienciaAtual = mapaDeficiencias.get(item.idDeficiencia);
+
+      deficienciaAtual.graus.push({
+        idGrauDeficiencia: item.idGrauDeficiencia,
+        grau: item.grau,
+        total: totalItem,
+      });
+
+      deficienciaAtual.totalGeralCidadaos += totalItem;
+    }
+
+    return Array.from(mapaDeficiencias.values());
+  }
 
   async obterMetricas(
     filtro: FiltroDashboardDto,
@@ -31,11 +320,7 @@ export class DashboardService {
       const idOrganizacaoLogada = this.cls.get<string>('idOrganizacao');
 
       // 1. CARDS CONTADORES (KPIs)
-      const kpis = await this.calcularKpiCards(
-        filtro,
-        papelLogado,
-        idOrganizacaoLogada,
-      );
+      const kpis = await this.calcularKpiCards(filtro);
 
       // 2. DISTRIBUIÇÃO GEOGRÁFICA (Onde estão?)
       const geografia = await this.calcularGeografia(
@@ -85,10 +370,11 @@ export class DashboardService {
 
   private async calcularKpiCards(
     filtro: FiltroDashboardDto,
-    papel: PapelUtilizador,
-    idOrg: string,
   ): Promise<Record<string, unknown>> {
     try {
+      const papel = this.cls.get<PapelUtilizador>('papel');
+      const idOrg = this.cls.get<string>('idOrganizacao');
+
       // Query Base com filtros
       const queryBase = this.entityManagerHelper
         .createQueryBuilder(Cidadao, 'c')
@@ -117,6 +403,7 @@ export class DashboardService {
       const queryPivot = this.entityManagerHelper
         .createQueryBuilder(CidadaoDeficiencia, 'cd')
         .innerJoin('tb_cidadao', 'c', 'cd.idCidadao = c.idCidadao')
+        .groupBy('c.idCidadao')
         .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO);
       this.aplicarFiltrosGlobais(queryPivot, filtro, papel, idOrg);
       const totalAssociacoes = await queryPivot.getCount();
@@ -140,9 +427,9 @@ export class DashboardService {
 
       return {
         totalCidadaos,
-        crescimentoHomologoPercentual: 14.5, // Simulação de período homólogo para o cartão
         cadastrosPendentes,
         cadastrosAtivos,
+        crescimentoHomologoPercentual: 14.5,
         densidadeDeficiencias,
         coberturaBairros: {
           bairrosAtivos: bairrosAtivosCount,

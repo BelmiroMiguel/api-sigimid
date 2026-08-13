@@ -170,9 +170,11 @@ export class Cidadao extends AuditFields {
 
     this.fotosCorpoCompletoBase = this.fotosCorpoCompleto;
     if (this.fotosCorpoCompleto && Array.isArray(this.fotosCorpoCompleto)) {
-      this.fotosCorpoCompleto = this.fotosCorpoCompleto.map((caminho) =>
-        UploadService.carregarUrlBaseFicheiro('cidadaos/img/corpo', caminho),
-      );
+      this.fotosCorpoCompleto = this.fotosCorpoCompleto
+        .map((caminho) =>
+          UploadService.carregarUrlBaseFicheiro('cidadaos/img/corpo', caminho),
+        )
+        .filter((c) => c != undefined && c != null);
     }
   }
 }

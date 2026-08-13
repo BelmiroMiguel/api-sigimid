@@ -31,6 +31,11 @@ import path from 'path';
 import { UploadService } from '../../core/upload/upload.service';
 import { GrauDeficiencia } from '../deficiencia/entities/grau-deficiencia.entity';
 import { EntityManager } from 'typeorm';
+import { CondicaoEspecial } from '../deficiencia/entities/condicao-especial.entity';
+import { CidadaoCondicaoEspecial } from './entities/cidadao-condicao-especial.entity';
+import { Utilizador } from '../utilizador/entities/utilizador.entity';
+import { pathFotoPerfilCidadao } from './interceptors/cidadao-perfil-upload.interceptor';
+import { pathFotoCorpoCidadao } from './interceptors/cidadao-corpo-upload.interceptor';
 
 @Injectable()
 export class CidadaoService {
@@ -137,6 +142,36 @@ export class CidadaoService {
           await manager.save(cd);
         }
 
+        // Inserir Condicoes Especiais Associativas
+        for (const idCondicaoEspecial of dto.condicoesEspeciais) {
+          const condicaoEspecial = await manager.findOneBy(CondicaoEspecial, {
+            idCondicaoEspecial: idCondicaoEspecial,
+          });
+          if (!condicaoEspecial) {
+            throw new NotFoundException(`Condição especial inválida.`);
+          }
+
+          const existeCondicaoEspecial = await manager.findOneBy(
+            CidadaoCondicaoEspecial,
+            {
+              idCidadao: cidadaoSalvo.idCidadao,
+              idCondicaoEspecial: idCondicaoEspecial,
+            },
+          );
+          if (existeCondicaoEspecial) {
+            throw new ConflictException(
+              `Tipologia de condição especial iguais para o mesmo cidadão.`,
+            );
+          }
+
+          const cd = manager.create(CidadaoCondicaoEspecial, {
+            idOrganizacao: idOrganizacaoLogada,
+            idCidadao: cidadaoSalvo.idCidadao,
+            idCondicaoEspecial: idCondicaoEspecial,
+          });
+          await manager.save(cd);
+        }
+
         // Criar Log de Auditoria
         const log = manager.create(AuditoriaSistema, {
           idOrganizacao: idOrganizacaoLogada,
@@ -165,13 +200,13 @@ export class CidadaoService {
     }
   }
 
-  async editar(id: string, dto: EditarCidadaoDto): Promise<Cidadao> {
+  async editar(idCidadado: string, dto: EditarCidadaoDto): Promise<Cidadao> {
     try {
-      const cidadao = await this.buscarPorId(id);
+      const cidadao = await this.buscarPorId(idCidadado);
       const valorAntes = JSON.parse(JSON.stringify(cidadao));
 
       const fotoPerfilAntiga = cidadao.fotoPerfilBase;
-      const fotosCorpoAntigas = cidadao.fotosCorpoCompletoBase || [];
+      const fotosCorpoAntigasBase = cidadao.fotosCorpoCompletoBase || [];
 
       if (dto.identificacao && dto.identificacao !== cidadao.identificacao) {
         const cadastroExiste = await this.entityManagerHelper
@@ -181,7 +216,7 @@ export class CidadaoService {
             'c.tipoIdentificacao',
             dto.tipoIdentificacao || cidadao.tipoIdentificacao,
           )
-          .whereNotEqual('c.idCidadao', id)
+          .whereNotEqual('c.idCidadao', idCidadado)
           .whereNotEqual('c.estado', EstadoCidadao.ELIMINADO)
           .getOne();
 
@@ -199,14 +234,14 @@ export class CidadaoService {
       const caminhosFicheirosParaRemover: string[] = [];
 
       // Execução da transação no banco de dados
-      const cidadaoSalvo = await this.entityManagerHelper.transaction(
+      const salvo = await this.entityManagerHelper.transaction(
         async (manager) => {
           let fotoPerfilAtual = cidadao.fotoPerfilBase;
           if (dto.fotoPerfil) {
             fotoPerfilAtual = dto.fotoPerfil;
-            if (fotoPerfilAntiga && fotoPerfilAntiga !== dto.fotoPerfil) {
+            if (fotoPerfilAntiga && fotoPerfilAntiga !== fotoPerfilAtual) {
               caminhosFicheirosParaRemover.push(
-                path.join('uploads/cidadaos/perfil', fotoPerfilAntiga),
+                path.join('uploads', pathFotoPerfilCidadao, fotoPerfilAntiga),
               );
             }
           }
@@ -214,13 +249,45 @@ export class CidadaoService {
           let novaGaleriaCompleta = cidadao.fotosCorpoCompletoBase;
           if (
             dto.fotosCorpoCompleto !== undefined ||
-            dto.fotosCorpoCompletoManter !== undefined
+            dto.fotosCorpoCompletoBaseRemover !== undefined
+          ) {
+            const fotosManter = fotosCorpoAntigasBase.filter(
+              (foto) => !dto.fotosCorpoCompletoBaseRemover?.includes(foto),
+            );
+            const fotosNovas = dto.fotosCorpoCompleto || [];
+            novaGaleriaCompleta = [...fotosManter, ...fotosNovas];
+
+            if (novaGaleriaCompleta.length <= 0) {
+              throw new BadRequestException(
+                'Adicione pelo menos uma imagem do corpo completo.',
+              );
+            } else if (novaGaleriaCompleta.length > 3) {
+              throw new BadRequestException(
+                'No máximo são permitidas [3 fotos] do corpo completo.',
+              );
+            }
+
+            const fotosParaEliminar = fotosCorpoAntigasBase.filter(
+              (foto) => !fotosManter.includes(foto),
+            );
+            fotosParaEliminar.forEach((nomeFoto) => {
+              caminhosFicheirosParaRemover.push(
+                path.join('uploads', pathFotoCorpoCidadao, nomeFoto),
+              );
+            });
+          }
+
+          /**
+           * 
+          if (
+           ( dto.fotosCorpoCompleto !== undefined ||
+            dto.fotosCorpoCompletoManter !== undefined) && false
           ) {
             const fotosManter = dto.fotosCorpoCompletoManter || [];
             const fotosNovas = dto.fotosCorpoCompleto || [];
             novaGaleriaCompleta = [...fotosManter, ...fotosNovas];
 
-            const fotosParaEliminar = fotosCorpoAntigas.filter(
+            const fotosParaEliminar = fotosCorpoAntigasBase.filter(
               (foto) => !fotosManter.includes(foto),
             );
             fotosParaEliminar.forEach((nomeFoto) => {
@@ -229,59 +296,122 @@ export class CidadaoService {
               );
             });
           }
+           */
 
-          manager.merge(Cidadao, cidadao, {
-            ...dto,
-            bairro: { idBairro: dto.idBairro },
+          const cidadaoNovo = manager.create(Cidadao, {
+            nomeCompleto: dto.nomeCompleto?.trim(),
+            genero: dto.genero,
+            identificacao: dto.identificacao?.trim(),
+            tipoIdentificacao: dto.tipoIdentificacao,
+            telefone: dto.telefone?.trim(),
+            idBairro: dto.idBairro,
+            descricaoEndereco: dto.descricaoEndereco?.trim(),
+            observacoes: dto.observacoes?.trim(),
+            idUltimaModificacao: idUtilizadorLogado,
             dataNascimento: dto.dataNascimento
               ? new Date(dto.dataNascimento)
-              : cidadao.dataNascimento,
+              : undefined,
             dataInscricao: dto.dataInscricao
               ? new Date(dto.dataInscricao)
-              : cidadao.dataInscricao,
-            idUltimaModificacao: idUtilizadorLogado,
+              : undefined,
             fotoPerfil: fotoPerfilAtual,
             fotosCorpoCompleto: novaGaleriaCompleta,
-            descricaoEndereco: dto.descricaoEndereco,
           });
 
-          const salvo = await manager.save(cidadao);
+          await manager.update(Cidadao, cidadao.idCidadao, cidadaoNovo as any);
+          const cidadaoSalvo = await this.buscarPorId(
+            cidadao.idCidadao,
+            manager,
+          );
 
           // Correção da associação: agora utilizando GrauDeficiencia coerentemente
-          if (dto.idGrausDeficiencias) {
-            await manager.delete(CidadaoDeficiencia, { idCidadao: id });
 
-            for (const idGrauDeficiencia of dto.idGrausDeficiencias) {
-              const grauDeficiencia = await manager.findOneBy(GrauDeficiencia, {
-                idGrauDeficiencia,
-              });
-              if (!grauDeficiencia) {
-                throw new NotFoundException(
-                  `Grau de deficiência [${idGrauDeficiencia}] não cadastrado.`,
-                );
-              }
-              const cd = manager.create(CidadaoDeficiencia, {
-                idOrganizacao: idOrganizacaoLogada,
-                idCidadao: salvo.idCidadao,
-                idGrauDeficiencia: idGrauDeficiencia,
-              });
-              await manager.save(cd);
+          // Inserir Deficiências Associativas
+          if ((dto.grausDeficiencias ?? []).length > 0) {
+            await manager.delete(CidadaoDeficiencia, {
+              idCidadao: idCidadado,
+            });
+          }
+
+          for (const idGrauDeficiencia of dto.grausDeficiencias ?? []) {
+            const grauDeficiencia = await manager.findOneBy(GrauDeficiencia, {
+              idGrauDeficiencia,
+            });
+            if (!grauDeficiencia) {
+              throw new NotFoundException(
+                `A tipologia de deficiência não existe no catálogo.`,
+              );
             }
+
+            const existeDeficiencia = await manager.findOneBy(
+              CidadaoDeficiencia,
+              {
+                idCidadao: cidadaoSalvo.idCidadao,
+                idGrauDeficiencia: idGrauDeficiencia,
+              },
+            );
+            if (existeDeficiencia) {
+              throw new ConflictException(
+                `Tipologia de deficiência iguais para o mesmo cidadão.`,
+              );
+            }
+
+            const cd = manager.create(CidadaoDeficiencia, {
+              idOrganizacao: idOrganizacaoLogada,
+              idCidadao: cidadaoSalvo.idCidadao,
+              idGrauDeficiencia: idGrauDeficiencia,
+            });
+            await manager.save(cd);
+          }
+
+          // Inserir Condicoes Especiais Associativas
+          if ((dto.condicoesEspeciais ?? []).length > 0) {
+            await manager.delete(CidadaoCondicaoEspecial, {
+              idCidadao: idCidadado,
+            });
+          }
+          for (const idCondicaoEspecial of dto.condicoesEspeciais ?? []) {
+            const condicaoEspecial = await manager.findOneBy(CondicaoEspecial, {
+              idCondicaoEspecial: idCondicaoEspecial,
+            });
+            if (!condicaoEspecial) {
+              throw new NotFoundException(`Condição especial inválida.`);
+            }
+
+            const existeCondicaoEspecial = await manager.findOneBy(
+              CidadaoCondicaoEspecial,
+              {
+                idCidadao: cidadaoSalvo.idCidadao,
+                idCondicaoEspecial: idCondicaoEspecial,
+              },
+            );
+            if (existeCondicaoEspecial) {
+              throw new ConflictException(
+                `Tipologia de condição especial iguais para o mesmo cidadão.`,
+              );
+            }
+
+            const cd = manager.create(CidadaoCondicaoEspecial, {
+              idOrganizacao: idOrganizacaoLogada,
+              idCidadao: cidadaoSalvo.idCidadao,
+              idCondicaoEspecial: idCondicaoEspecial,
+            });
+            await manager.save(cd);
           }
 
           const log = manager.create(AuditoriaSistema, {
             idOrganizacao: idOrganizacaoLogada,
             tabelaAfetada: 'tb_cidadao',
-            idRegisto: salvo.idCidadao,
+            idRegisto: cidadaoSalvo.idCidadao,
             acao: AcaoAuditoria.EDITAR,
             valorAntigo: valorAntes,
-            valorNovo: JSON.parse(JSON.stringify(salvo)),
+            valorNovo: JSON.parse(JSON.stringify(cidadaoSalvo)),
             idUtilizador: idUtilizadorLogado,
             ip: ipRequest,
           });
           await manager.save(log);
 
-          return salvo;
+          return cidadaoSalvo;
         },
       );
 
@@ -294,13 +424,15 @@ export class CidadaoService {
         }
       }
 
-      return cidadaoSalvo;
-    } catch (error) {
+      return salvo;
+    } catch (error: any) {
       if (
         error instanceof ConflictException ||
+        error instanceof BadRequestException ||
         error instanceof NotFoundException
       )
         throw error;
+      this.logger.error(error.message);
       throw new InternalServerErrorException(
         'Falha ao atualizar a ficha do cidadão.',
       );
@@ -413,6 +545,68 @@ export class CidadaoService {
     }
   }
 
+  async restaurar(idCidadao: string): Promise<void> {
+    try {
+      const cidadao = await this.buscarPorId(idCidadao);
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      if (cidadao.estado != EstadoCidadao.INATIVO) {
+        throw new ConflictException(
+          'O cidadão precisa estar inativo para restaurar.',
+        );
+      }
+
+      await this.entityManagerHelper.transaction(async (manager) => {
+        cidadao.estado = EstadoCidadao.ATIVO;
+        cidadao.dataEliminacao = new Date();
+        cidadao.idUltimaModificacao = idUtilizadorLogado;
+
+        await manager.save(cidadao);
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException(
+        'Erro ao tentar restaurar o cidadao.',
+      );
+    }
+  }
+
+  async inativar(idCidadao: string): Promise<void> {
+    try {
+      const cidadao = await this.buscarPorId(idCidadao);
+      const idUtilizadorLogado = this.cls.get<string>('idUtilizador');
+
+      if (cidadao.estado != EstadoCidadao.ATIVO) {
+        throw new ConflictException(
+          'O cidadão precisa estar  ativo para inativar.',
+        );
+      }
+
+      await this.entityManagerHelper.transaction(async (manager) => {
+        cidadao.estado = EstadoCidadao.INATIVO;
+        cidadao.dataEliminacao = new Date();
+        cidadao.idUltimaModificacao = idUtilizadorLogado;
+
+        await manager.save(cidadao);
+      });
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      )
+        throw error;
+      throw new InternalServerErrorException(
+        'Erro ao tentar inativar o cidadao.',
+      );
+    }
+  }
+
   private construirQueryFiltro(filtro: FiltroCidadaoDto) {
     try {
       const papelLogado = this.cls.get<PapelUtilizador>('papel');
@@ -501,14 +695,8 @@ export class CidadaoService {
       }
       // --- FIM DO AJUSTE ---
 
-      if (filtro.ordenacao) {
-        Object.entries(filtro.ordenacao).forEach(([coluna, direcao], index) => {
-          query.orderBy(`c.${coluna}`, direcao);
-          //if (index === 0) {
-          //} else {
-          //  query.addOrderBy(`c.${coluna}`, direcao);
-          //}
-        });
+      if (filtro.sort && filtro.dir) {
+        query.orderBy(`c.${filtro.sort}`, filtro.dir);
       } else {
         query.orderBy('c.nomeCompleto', 'ASC');
       }

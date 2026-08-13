@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Res,
   UseInterceptors,
+  Delete,
 } from '@nestjs/common';
 import { type Response } from 'express';
 import { CidadaoService } from './cidadao.service';
@@ -193,5 +194,33 @@ export class CidadaoController {
       nomeArquivo,
     );
     return res.sendFile(caminhoFisico);
+  }
+
+  @Delete(':id/inativar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async inativar(@Param('id') id: string): Promise<IApiResponse<null>> {
+    await this.cidadaoService.inativar(id);
+    return {
+      message: 'Cidadao foi inativado com sucesso.',
+      body: null,
+    };
+  }
+
+  @Post(':id/restaurar')
+  @RolesPapelUtilizador(
+    PapelUtilizador.ADMINISTRADOR,
+    PapelUtilizador.SUPERVISOR,
+  )
+  @HttpCode(HttpStatus.OK)
+  async restaurar(@Param('id') id: string): Promise<IApiResponse<null>> {
+    await this.cidadaoService.restaurar(id);
+    return {
+      message: 'Cidadao foi restaurado com sucesso.',
+      body: null,
+    };
   }
 }

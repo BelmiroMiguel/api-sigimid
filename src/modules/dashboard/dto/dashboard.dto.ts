@@ -5,8 +5,9 @@ import {
   IsEnum,
   IsArray,
   IsString,
+  IsNumber,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { EstadoRegistoDashboard } from '../enums/dashboard.enum';
 
 export class FiltroDashboardDto {
@@ -48,6 +49,15 @@ export class FiltroDashboardDto {
     message: 'O ID do bairro selecionado deve ser um UUID válido.',
   })
   idBairro?: string;
+
+  @IsOptional()
+  @Transform((v) => (Array.isArray(v.value) ? v.value : [v.value]))
+  idBairroIn: string[];
+
+  @IsOptional()
+  @Type(() => Number) // Garante que a string da URL seja convertida para número real
+  @IsNumber({}, { message: 'O ano informado deve ser um número válido.' })
+  ano?: number;
 
   // === FILTRO CLÍNICO (SELEÇÃO MÚLTIPLA) ===
   @IsOptional()

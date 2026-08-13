@@ -73,6 +73,7 @@ export class DatabaseSeedService implements OnApplicationBootstrap {
       papel: PapelUtilizador.ADMINISTRADOR,
       idOrganizacao: empresaSalva.idOrganizacao,
       senhaHash: senhaHash,
+      telefone: '922858324',
       empresa: empresaSalva,
     });
     return await manager.save(novoFuncionario);
